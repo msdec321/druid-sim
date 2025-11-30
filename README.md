@@ -9,7 +9,7 @@ A World of Warcraft: The Burning Crusade Restoration Druid healing simulator. Pr
 ## Encounters
 
 Face off against configurable raid encounters with realistic damage patterns. The simulator features tank damage, raid-wide AoE, and random target mechanics.   
-Current contains three "training dummy" encounters (single tank, two tank, and three tank). The plan will have simulated encounters of each boss in Sunwell Plateau (Kalecgos through Kil'jaeden), and perhaps more.  
+Currently contains three "training dummy" encounters (single tank, two tank, and three tank). The plan will be to have simulated encounters of each boss in Sunwell Plateau (Kalecgos through Kil'jaeden), and perhaps more.  
 Currently Resto Shamans will cast Chain Heal on the raid. TODO: Will add functionality to allow Holy Paladins and Priests to heal as well.  
 Raid-frames are based on a standard GRID2 layout. I don't particularly plan on adding templates for other raidframe addons.  
 TODO: Add mouseover casting support  
