@@ -34,7 +34,6 @@ function App() {
   const saveDataHook = useSaveData();
 
   // Calculate total points spent in the tree for prerequisite checks
-  const totalPointsSpent = talentPoints + furorPoints + naturalistPoints + naturesFocusPoints + naturalShapeshifterPoints;
   const row1Points = talentPoints + furorPoints;
   const row2Unlocked = row1Points >= 5;
 
@@ -66,7 +65,7 @@ function App() {
               left: '50%',
               transform: 'translateX(-50%)',
               margin: 0,
-            }}>Talent Tree</h1>
+            }}>Talent Tree (Under Construction)</h1>
             <button
               onClick={() => setCurrentScreen('main-menu')}
               style={{
