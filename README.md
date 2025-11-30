@@ -26,9 +26,13 @@ Choose from five progression tiers of pre-configured gear sets spanning the enti
 
 Coming soon: Custom gearsets. Create your own customized loadout of any gear available. Export and Import functionality to save gearsets and share with others.  
 
+## Talent Trees (Under construction)
+
+Choose from a set of three pre-set talent loadouts (Deep resto, Dreamstate, or Nature's Grace), or optionally create your own custom talent loadout. Export/Import talents to share with others.
+
 ## Action Bars, Keybinds, and Macros  
 
-Customize your healing setup with a flexible action bar system:  
+Customize your healing setup with a flexible action bar system. Left-click on an action bar slot to set a spell. Right-click on an action bar slot to set a keybind.  
 
 - **Action Bars** - Consistent with base WoW interface (Main bar, Bottom Left, Bottom Right, Right 1, and Right 2)  
 - **Keybindings** - Bind any key to action bar slots  
