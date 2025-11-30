@@ -150,7 +150,7 @@ export function rollCombatTable(
 export function formatAttackResult(
   attackerName: string,
   targetName: string,
-  baseDamage: number,
+  _baseDamage: number,
   result: AttackResult
 ): string {
   switch (result.outcome) {

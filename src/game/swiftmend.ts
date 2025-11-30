@@ -1,6 +1,5 @@
 import type { ActiveHoT } from '../types/spells';
 import type { RaidMember } from '../types/encounter';
-import { getSpell } from '../data/spells';
 import { TALENT_CONSTANTS, type HealEvent } from './lifebloom';
 
 // HoTs that Swiftmend can consume, in priority order

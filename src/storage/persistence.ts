@@ -89,6 +89,7 @@ function migrateSaveData(data: V1SaveData | SaveData): SaveData {
       keybindings: { bindings: newBindings },
       preferences: current.preferences,
       raidComposition: DEFAULT_RAID_COMPOSITION,
+      macros: [],
     };
   }
 
