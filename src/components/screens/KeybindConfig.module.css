@@ -1,0 +1,113 @@
+/* Bar Tabs */
+.barTabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.barTab {
+  padding: 0.5rem 1rem;
+  background-color: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 6px;
+  color: #888;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.barTab:hover {
+  border-color: #7ec8e3;
+  color: #eaeaea;
+}
+
+.activeTab {
+  background-color: #3d4d5c;
+  border-color: #7ec8e3;
+  color: #7ec8e3;
+}
+
+/* Bar Info */
+.barInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  justify-content: center;
+}
+
+.barName {
+  font-size: 1.1rem;
+  color: #eaeaea;
+}
+
+.slotGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.slotRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.slotLabel {
+  width: 80px;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.keyButton {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background-color: #2d2d44;
+  border: 2px solid #3d3d5c;
+  border-radius: 6px;
+  color: #eaeaea;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+  text-align: center;
+}
+
+.keyButton:hover {
+  border-color: #7ec8e3;
+}
+
+.listening {
+  border-color: #7ec8e3;
+  background-color: #3d4d5c;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(126, 200, 227, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(126, 200, 227, 0.6);
+  }
+}
+
+.clearButton {
+  padding: 0.5rem 0.75rem;
+  background-color: transparent;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #888;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clearButton:hover {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}

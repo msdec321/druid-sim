@@ -1,0 +1,774 @@
+/* Encounter Screen Layout */
+.encounterScreen {
+  min-height: 100vh;
+  background-color: #1a1a2e;
+  color: #eaeaea;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-size: 1.5rem;
+  color: #888;
+}
+
+/* Victory Overlay */
+.victoryOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.victoryModal {
+  background: linear-gradient(135deg, #2d5a2d 0%, #1a3d1a 100%);
+  border: 3px solid #4d9a4d;
+  border-radius: 12px;
+  padding: 3rem 4rem;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(46, 204, 113, 0.4);
+}
+
+.victoryTitle {
+  font-size: 3rem;
+  color: #2ecc71;
+  margin: 0 0 1rem 0;
+  text-shadow: 0 0 20px rgba(46, 204, 113, 0.6);
+}
+
+.victoryText {
+  font-size: 1.2rem;
+  color: #eaeaea;
+  margin: 0 0 2rem 0;
+}
+
+.victoryButton {
+  padding: 0.75rem 2rem;
+  font-size: 1.1rem;
+  font-weight: bold;
+  background-color: #27ae60;
+  border: 2px solid #2ecc71;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.victoryButton:hover {
+  background-color: #2ecc71;
+  box-shadow: 0 0 15px rgba(46, 204, 113, 0.6);
+  transform: scale(1.05);
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.headerCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.exitButton {
+  padding: 0.5rem 1rem;
+  background-color: #5c2d2d;
+  border: 1px solid #8b4444;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.exitButton:hover {
+  background-color: #7a3d3d;
+  border-color: #e74c3c;
+}
+
+.startButton {
+  padding: 0.5rem 1.5rem;
+  background-color: #2d5c2d;
+  border: 1px solid #44884b;
+  border-radius: 4px;
+  color: #eaeaea;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.startButton:hover {
+  background-color: #3d7a3d;
+  border-color: #2ecc71;
+  box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);
+}
+
+.buffButton {
+  padding: 0.5rem 1.5rem;
+  background-color: #4a2d5c;
+  border: 1px solid #7b48a0;
+  border-radius: 4px;
+  color: #eaeaea;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 0.5rem;
+}
+
+.buffButton:hover {
+  background-color: #5c3d7a;
+  border-color: #9b59b6;
+  box-shadow: 0 0 10px rgba(155, 89, 182, 0.4);
+}
+
+.encounterName {
+  font-size: 1.5rem;
+  color: #7ec8e3;
+  margin: 0;
+}
+
+/* Boss Section */
+.bossSection {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.bossFrame {
+  background-color: #2d2d44;
+  border: 2px solid #8b4444;
+  border-radius: 8px;
+  padding: 1rem 2rem;
+  min-width: 300px;
+  text-align: center;
+  transform: translateX(-500px);
+}
+
+.bossName {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #e74c3c;
+  margin-bottom: 0.5rem;
+}
+
+.bossHealthBar {
+  position: relative;
+  height: 24px;
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bossHealthFill {
+  height: 100%;
+  background: linear-gradient(to bottom, #c0392b, #962d22);
+  transition: width 0.2s ease;
+}
+
+.bossHealthText {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Raid Grid - 5x5 grid of player squares */
+.raidGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 65px);
+  grid-template-rows: repeat(5, 65px);
+  gap: 4px;
+  margin: 0 auto;
+  transform: translate(-500px, 100px);
+}
+
+.raidSquare {
+  width: 65px;
+  height: 65px;
+  background-color: #1a1a2e;
+  border: 2px solid var(--class-color, #3d3d5c);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Health fill from bottom */
+.raidSquare::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--health-percent, 100%);
+  background-color: var(--class-color, #2ecc71);
+  opacity: 0.8;
+  transition: height 0.15s ease, background-color 0.15s ease;
+}
+
+.raidSquare:hover {
+  transform: scale(1.1);
+  z-index: 1;
+  box-shadow: 0 0 10px rgba(126, 200, 227, 0.4);
+}
+
+.raidSquare.dead {
+  opacity: 0.4;
+  border-color: #5c2d2d;
+}
+
+.raidSquare.dead::before {
+  background-color: #2d1a1a;
+}
+
+.raidSquare.targeted {
+  border-color: #fff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  z-index: 1;
+}
+
+.raidSquare.playerSquare {
+  box-shadow: 0 0 8px var(--class-color, #FF7D0A);
+}
+
+/* Action Bar Layout */
+.actionBarLayout {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.actionBarLayout > * {
+  pointer-events: auto;
+}
+
+.rightBars {
+  display: flex;
+  gap: 0.5rem;
+  position: absolute;
+  right: 2rem;
+  bottom: 2rem;
+}
+
+.bottomBars {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.secondaryBars {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mainBar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Action Bar Styles */
+.actionBar {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.verticalBar {
+  flex-direction: column;
+}
+
+.horizontalBar {
+  flex-direction: row;
+}
+
+.actionSlot {
+  width: 44px;
+  height: 44px;
+  background-color: #2d2d44;
+  border: 2px solid #3d3d5c;
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.actionIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.emptySlot {
+  font-size: 1.2rem;
+  color: #444;
+}
+
+.macroSlotIcon {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #9b59b6;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.macroNameLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  max-width: calc(100% - 4px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.keybindLabel {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 0.55rem;
+  font-weight: bold;
+  color: #ffd700;
+  background-color: rgba(0, 0, 0, 0.6);
+  padding: 0 2px;
+  border-radius: 2px;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+.actionSlot.pressed {
+  border-color: #00ff88;
+  background-color: #2d4d3c;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+  transform: scale(0.95);
+  transition: all 0.05s ease;
+}
+
+.gcdSweep {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* HoT Overlay Styles */
+.hotOverlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  z-index: 10;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hotIcon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.hotSweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.hotStacks {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #00ff88;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 0 3px;
+  border-radius: 3px;
+  min-width: 12px;
+  text-align: center;
+  text-shadow: 0 0 2px rgba(0, 255, 136, 0.8);
+}
+
+/* Rejuvenation indicator - small purple square */
+.rejuvIndicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  background-color: #9b59b6;
+  border: 1px solid #8e44ad;
+  border-radius: 2px;
+  z-index: 15;
+  box-shadow: 0 0 4px rgba(155, 89, 182, 0.6);
+}
+
+/* Regrowth indicator - small green square */
+.regrowthIndicator {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  background-color: #27ae60;
+  border: 1px solid #1e8449;
+  border-radius: 2px;
+  z-index: 15;
+  box-shadow: 0 0 4px rgba(39, 174, 96, 0.6);
+}
+
+/* Aggro indicator - flashing red square in bottom left */
+.aggroIndicator {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  width: 10px;
+  height: 10px;
+  background-color: #e74c3c;
+  border: 1px solid #c0392b;
+  border-radius: 2px;
+  z-index: 15;
+  animation: aggroFlash 0.8s ease-in-out infinite;
+}
+
+@keyframes aggroFlash {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(231, 76, 60, 0.9);
+  }
+  50% {
+    opacity: 0.4;
+    box-shadow: 0 0 2px rgba(231, 76, 60, 0.4);
+  }
+}
+
+/* Boss Circle - positioned on page */
+.bossCircle {
+  position: absolute;
+  left: 50%;
+  top: 280px;
+  transform: translate(-50%, -50%);
+  width: 70px;
+  height: 70px;
+  background-color: #c0392b;
+  border: 3px solid #e74c3c;
+  border-radius: 50%;
+  box-shadow: 0 0 25px rgba(231, 76, 60, 0.6);
+  z-index: 5;
+}
+
+/* Player Circles - positioned on page */
+.playerCircle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 5;
+}
+
+.playerCircle:hover {
+  transform: translate(-50%, -50%) scale(1.3);
+  border-color: rgba(255, 255, 255, 0.8);
+  z-index: 10;
+}
+
+.targetedCircle {
+  border-color: #fff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+.targetedCircle:hover {
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+.playerSelfCircle {
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* Floating Combat Text */
+.floatingHealText {
+  position: absolute;
+  transform: translateX(-50%);
+  color: #2ecc71;
+  font-size: 1rem;
+  font-weight: bold;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000,
+    0 0 8px rgba(46, 204, 113, 0.8);
+  pointer-events: none;
+  z-index: 100;
+  white-space: nowrap;
+}
+
+/* Cast Bar */
+/* Mana Bar */
+.manaBarContainer {
+  position: fixed;
+  bottom: 220px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+
+.manaBar {
+  width: 250px;
+  height: 20px;
+  background-color: #1a1a2e;
+  border: 2px solid #3d3d5c;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.manaBarFill {
+  height: 100%;
+  background: linear-gradient(to right, #3498db, #2980b9);
+  transition: width 0.1s linear;
+}
+
+.manaBarText {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* Cast Bar */
+.castBarContainer {
+  position: fixed;
+  bottom: 180px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+
+.castBar {
+  width: 250px;
+  height: 24px;
+  background-color: #1a1a2e;
+  border: 2px solid #3d3d5c;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.castBarFill {
+  height: 100%;
+  background: linear-gradient(to right, #f39c12, #e67e22);
+  transition: width 0.05s linear;
+}
+
+.castBarText {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* NPC Healer Cast Bar (small, above player circles) */
+.npcCastBarContainer {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+
+.npcCastBar {
+  width: 60px;
+  height: 10px;
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.npcCastBarFill {
+  height: 100%;
+  background: linear-gradient(to right, #3498db, #2980b9);
+  transition: width 0.05s linear;
+}
+
+.npcCastBarText {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+/* Buff Bar - top right corner */
+.buffBar {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: grid;
+  grid-template-columns: repeat(6, 44px);
+  justify-content: end;
+  gap: 0.5rem;
+  z-index: 50;
+}
+
+.buffIcon {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  border: 2px solid #7ec8e3;
+  border-radius: 4px;
+  background-color: #1a1a2e;
+  box-shadow: 0 0 8px rgba(126, 200, 227, 0.4);
+}
+
+.buffIconWithTooltip {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  border: 2px solid #7ec8e3;
+  border-radius: 4px;
+  background-color: #1a1a2e;
+  box-shadow: 0 0 8px rgba(126, 200, 227, 0.4);
+}
+
+.buffTooltip {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  z-index: 1000;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+}
+
+.buffIconWithTooltip:hover .buffTooltip {
+  display: block;
+}
+
+.buffImage {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.buffTimer {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background-color: rgba(0, 0, 0, 0.85);
+  color: #ffd700;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-shadow: 0 0 2px rgba(255, 215, 0, 0.6);
+}
+
+/* Chain Heal Visual Lines */
+.chainHealSvg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 100;
+  overflow: visible;
+}
+
+.chainHealLine {
+  stroke: #ffdd00;
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(255, 221, 0, 0.8))
+          drop-shadow(0 0 12px rgba(255, 221, 0, 0.5));
+  transition: opacity 0.1s ease-out;
+}
+

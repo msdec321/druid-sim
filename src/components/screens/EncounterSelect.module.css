@@ -1,0 +1,30 @@
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.difficulty {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #3d3d5c;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.duration {
+  color: #888;
+}
+
+.phases {
+  color: #888;
+}

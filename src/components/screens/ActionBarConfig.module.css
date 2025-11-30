@@ -1,0 +1,627 @@
+/* WoW-style Action Bar Layout */
+.actionBarLayout {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  top: 140px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.actionBarLayout > * {
+  pointer-events: auto;
+}
+
+.rightBars {
+  display: flex;
+  gap: 0.5rem;
+  position: absolute;
+  right: 2rem;
+  bottom: 2rem;
+}
+
+.bottomArea {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.secondaryBars {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mainBarContainer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Individual Bar Styles */
+.bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.barLabel {
+  font-size: 0.75rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.horizontalBar .slots {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.verticalBar .slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.verticalSlots {
+  flex-direction: column;
+}
+
+/* Slot Styles */
+.slot {
+  width: 44px;
+  height: 44px;
+  background-color: #2d2d44;
+  border: 2px solid #3d3d5c;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  padding: 0;
+}
+
+.slot:hover {
+  border-color: #7ec8e3;
+  transform: scale(1.05);
+}
+
+.selectedSlot {
+  border-color: #7ec8e3;
+  background-color: #3d4d5c;
+  box-shadow: 0 0 10px rgba(126, 200, 227, 0.4);
+}
+
+.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+.dragOver {
+  border-color: #ffd700;
+  background-color: #4d4d3c;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+}
+
+.pressed {
+  border-color: #00ff88;
+  background-color: #2d4d3c;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+  transform: scale(0.95);
+  transition: all 0.05s ease;
+}
+
+.slotNumber {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 0.6rem;
+  color: #555;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+
+.spellIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.emptySlot {
+  font-size: 1.2rem;
+  color: #444;
+}
+
+.macroSlotIcon {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #9b59b6;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.macroNameLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  max-width: calc(100% - 4px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.keybindLabel {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 0.55rem;
+  font-weight: bold;
+  color: #ffd700;
+  background-color: rgba(0, 0, 0, 0.6);
+  padding: 0 2px;
+  border-radius: 2px;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+/* Spell Picker Modal */
+.spellPickerOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.overlayDragging {
+  pointer-events: none;
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.overlayDragging > * {
+  pointer-events: auto;
+}
+
+.spellPicker {
+  background-color: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.spellPicker h3 {
+  margin-bottom: 1rem;
+  color: #7ec8e3;
+  text-align: center;
+}
+
+.spellGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.spellOption {
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  padding: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.spellOptionIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.spellOptionText {
+  display: flex;
+  flex-direction: column;
+}
+
+.spellOption:hover {
+  border-color: #7ec8e3;
+  background-color: #2d3d4d;
+}
+
+.spellOptionName {
+  display: block;
+  color: #eaeaea;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.spellOptionDesc {
+  display: block;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+/* Keybind Modal */
+.keybindModal {
+  background-color: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  min-width: 300px;
+}
+
+.keybindModal h3 {
+  color: #7ec8e3;
+  margin-bottom: 1.5rem;
+}
+
+.keybindPrompt {
+  font-size: 1.2rem;
+  color: #ffd700;
+  margin-bottom: 1rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.keybindCurrent {
+  color: #888;
+  margin-bottom: 1.5rem;
+}
+
+.keybindActions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.clearKeybindButton {
+  padding: 0.5rem 1rem;
+  background-color: #5c2d2d;
+  border: 1px solid #8b4444;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clearKeybindButton:hover {
+  background-color: #7a3d3d;
+  border-color: #e74c3c;
+}
+
+/* Import/Export Buttons */
+.importExportButtons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.importExportButton {
+  padding: 0.4rem 1rem;
+  background-color: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.importExportButton:hover {
+  background-color: #3d4d5c;
+  border-color: #7ec8e3;
+}
+
+.buttonDivider {
+  color: #555;
+  margin: 0 0.25rem;
+}
+
+.macroButton {
+  padding: 0.4rem 1rem;
+  background-color: #3d2d44;
+  border: 1px solid #5c3d5c;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.macroButton:hover {
+  background-color: #4d3d5c;
+  border-color: #9b59b6;
+}
+
+/* Macro Modal */
+.macroModal {
+  background-color: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.macroModal h3 {
+  margin-bottom: 0.5rem;
+  color: #9b59b6;
+  text-align: center;
+}
+
+.macroDescription {
+  color: #888;
+  font-size: 0.9rem;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.macroList {
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-height: 150px;
+}
+
+.macroEmpty {
+  color: #555;
+  text-align: center;
+  font-style: italic;
+}
+
+.macroActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.newMacroButton {
+  padding: 0.5rem 1.5rem;
+  background-color: #2d5a2d;
+  border: 1px solid #3d7a3d;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.newMacroButton:hover:not(:disabled) {
+  background-color: #3d7a3d;
+  border-color: #4d9a4d;
+}
+
+.newMacroButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.macroContainer {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.macroList {
+  flex: 0 0 140px;
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  padding: 0.5rem;
+  min-height: 200px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.macroItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.macroItem:hover {
+  background-color: #2d3d4d;
+}
+
+.macroItemSelected {
+  background-color: #3d4d5c;
+  border: 1px solid #7ec8e3;
+}
+
+.macroIcon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #2d2d44;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.macroIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.macroIconPlaceholder {
+  color: #666;
+  font-size: 1rem;
+}
+
+.macroItemName {
+  font-size: 0.8rem;
+  color: #eaeaea;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macroEditor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.macroEditorHeader {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.macroNameInput {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #eaeaea;
+}
+
+.macroNameInput:focus {
+  outline: none;
+  border-color: #7ec8e3;
+}
+
+.macroNameInput::placeholder {
+  color: #666;
+}
+
+.macroBodyInput {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  font-family: monospace;
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #eaeaea;
+  resize: none;
+  min-height: 120px;
+}
+
+.macroBodyInput:focus {
+  outline: none;
+  border-color: #7ec8e3;
+}
+
+.macroBodyInput::placeholder {
+  color: #555;
+}
+
+.macroEditorActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.macroDeleteButton {
+  padding: 0.4rem 0.8rem;
+  background-color: #5a2d2d;
+  border: 1px solid #7a3d3d;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.macroDeleteButton:hover {
+  background-color: #7a3d3d;
+  border-color: #9a4d4d;
+}
+
+.macroCancelButton {
+  padding: 0.5rem 1rem;
+  background-color: #3d3d44;
+  border: 1px solid #5d5d6c;
+  border-radius: 4px;
+  color: #eaeaea;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.macroCancelButton:hover {
+  background-color: #4d4d5c;
+  border-color: #7d7d8c;
+}
+
+.macroDescription code {
+  background-color: #1a1a2e;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  color: #9b59b6;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .rightBars {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 1rem;
+  }
+
+  .bottomArea {
+    bottom: 0.5rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .slot {
+    width: 38px;
+    height: 38px;
+  }
+
+  .spellIcon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .slotNumber {
+    font-size: 0.5rem;
+  }
+}
