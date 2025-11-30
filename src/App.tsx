@@ -25,7 +25,18 @@ function App() {
   const [talentHovered, setTalentHovered] = useState(false);
   const [furorPoints, setFurorPoints] = useState(0);
   const [furorHovered, setFurorHovered] = useState(false);
+  const [naturalistPoints, setNaturalistPoints] = useState(0);
+  const [naturalistHovered, setNaturalistHovered] = useState(false);
+  const [naturesFocusPoints, setNaturesFocusPoints] = useState(0);
+  const [naturesFocusHovered, setNaturesFocusHovered] = useState(false);
+  const [naturalShapeshifterPoints, setNaturalShapeshifterPoints] = useState(0);
+  const [naturalShapeshifterHovered, setNaturalShapeshifterHovered] = useState(false);
   const saveDataHook = useSaveData();
+
+  // Calculate total points spent in the tree for prerequisite checks
+  const totalPointsSpent = talentPoints + furorPoints + naturalistPoints + naturesFocusPoints + naturalShapeshifterPoints;
+  const row1Points = talentPoints + furorPoints;
+  const row2Unlocked = row1Points >= 5;
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -117,6 +128,7 @@ function App() {
                       pointerEvents: 'none',
                       transform: 'scale(0.75)',
                       transformOrigin: 'top left',
+                      zIndex: 100,
                     }}
                   />
                 )}
@@ -166,6 +178,160 @@ function App() {
                       pointerEvents: 'none',
                       transform: 'scale(0.75)',
                       transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '80px',
+                  left: '730px',
+                  cursor: row2Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row2Unlocked ? 1 : 0.5,
+                }}
+                onClick={() => row2Unlocked && setNaturalistPoints(p => Math.min(p + 1, 5))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setNaturalistPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setNaturalistHovered(true)}
+                onMouseLeave={() => setNaturalistHovered(false)}
+              >
+                <img
+                  src="/icons/talents/naturalist.jpg"
+                  alt="Naturalist"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row2Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row2Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{naturalistPoints}/5</span>
+                {naturalistHovered && (
+                  <img
+                    src={`/tooltips/talents/naturalist_${naturalistPoints}.png`}
+                    alt="Naturalist tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '80px',
+                  left: '800px',
+                  cursor: row2Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row2Unlocked ? 1 : 0.5,
+                }}
+                onClick={() => row2Unlocked && setNaturesFocusPoints(p => Math.min(p + 1, 5))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setNaturesFocusPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setNaturesFocusHovered(true)}
+                onMouseLeave={() => setNaturesFocusHovered(false)}
+              >
+                <img
+                  src="/icons/talents/natures-focus.jpg"
+                  alt="Nature's Focus"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row2Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row2Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{naturesFocusPoints}/5</span>
+                {naturesFocusHovered && (
+                  <img
+                    src={`/tooltips/talents/natures-focus_${naturesFocusPoints}.png`}
+                    alt="Nature's Focus tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '80px',
+                  left: '875px',
+                  cursor: row2Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row2Unlocked ? 1 : 0.5,
+                }}
+                onClick={() => row2Unlocked && setNaturalShapeshifterPoints(p => Math.min(p + 1, 3))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setNaturalShapeshifterPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setNaturalShapeshifterHovered(true)}
+                onMouseLeave={() => setNaturalShapeshifterHovered(false)}
+              >
+                <img
+                  src="/icons/talents/natural-shapeshifter.jpg"
+                  alt="Natural Shapeshifter"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row2Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row2Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{naturalShapeshifterPoints}/3</span>
+                {naturalShapeshifterHovered && (
+                  <img
+                    src={`/tooltips/talents/natural-shapeshifter_${naturalShapeshifterPoints}.png`}
+                    alt="Natural Shapeshifter tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
                     }}
                   />
                 )}
