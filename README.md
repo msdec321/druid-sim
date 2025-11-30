@@ -1,5 +1,7 @@
 # TBC Resto Druid Simulator  
 
+Note: This app is still in development  
+
 A World of Warcraft: The Burning Crusade Restoration Druid healing simulator. Practice your healing rotation, experiment with different gear sets, and master raid encounters in an interactive browser-based environment that faithfully recreates TBC healing mechanics including HoTs, spell coefficients, and mana management.  
 
 **Live App:** [https://druid-sim.com/](https://druid-sim.com/)
