@@ -4,6 +4,8 @@ A World of Warcraft: The Burning Crusade Restoration Druid healing simulator. Pr
 
 **Live App:** [https://druid-sim.com/](https://druid-sim.com/)
 
+<video src="docs/encounter-sample.webm" controls width="600"></video>
+
 ## Encounters
 
 Face off against configurable raid encounters with realistic damage patterns. The simulator features tank damage, raid-wide AoE, and random target mechanics. NPC healers (Resto Shamans) provide AI-controlled support with proper Chain Heal mechanics. Track your healing output, overheal percentage, and mana efficiency as you work to keep the raid alive.
