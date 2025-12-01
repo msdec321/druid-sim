@@ -6,7 +6,9 @@ A World of Warcraft: The Burning Crusade Restoration Druid healing simulator. Pr
 
 **Live App:** [https://druid-sim.com/](https://druid-sim.com/)
 
-<video src="docs/encounter-sample.webm" controls width="600"></video>
+Example gameplay:
+[tree-sim-sample.webm](https://github.com/user-attachments/assets/ddd628a5-a2af-413a-8ec9-a6ea4a1eff2e)
+
 
 ## Encounters
 
