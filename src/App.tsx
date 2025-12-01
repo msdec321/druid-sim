@@ -31,11 +31,19 @@ function App() {
   const [naturesFocusHovered, setNaturesFocusHovered] = useState(false);
   const [naturalShapeshifterPoints, setNaturalShapeshifterPoints] = useState(0);
   const [naturalShapeshifterHovered, setNaturalShapeshifterHovered] = useState(false);
+  const [intensityPoints, setIntensityPoints] = useState(0);
+  const [intensityHovered, setIntensityHovered] = useState(false);
+  const [subtletyPoints, setSubtletyPoints] = useState(0);
+  const [subtletyHovered, setSubtletyHovered] = useState(false);
+  const [omenPoints, setOmenPoints] = useState(0);
+  const [omenHovered, setOmenHovered] = useState(false);
   const saveDataHook = useSaveData();
 
   // Calculate total points spent in the tree for prerequisite checks
   const row1Points = talentPoints + furorPoints;
+  const row2Points = naturalistPoints + naturesFocusPoints + naturalShapeshifterPoints;
   const row2Unlocked = row1Points >= 5;
+  const row3Unlocked = row1Points + row2Points >= 10;
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -189,6 +197,7 @@ function App() {
                   left: '730px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
+                  zIndex: naturalistHovered ? 100 : 1,
                 }}
                 onClick={() => row2Unlocked && setNaturalistPoints(p => Math.min(p + 1, 5))}
                 onContextMenu={(e) => {
@@ -240,6 +249,7 @@ function App() {
                   left: '800px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
+                  zIndex: naturesFocusHovered ? 100 : 1,
                 }}
                 onClick={() => row2Unlocked && setNaturesFocusPoints(p => Math.min(p + 1, 5))}
                 onContextMenu={(e) => {
@@ -291,6 +301,7 @@ function App() {
                   left: '875px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
+                  zIndex: naturalShapeshifterHovered ? 100 : 1,
                 }}
                 onClick={() => row2Unlocked && setNaturalShapeshifterPoints(p => Math.min(p + 1, 3))}
                 onContextMenu={(e) => {
@@ -323,6 +334,162 @@ function App() {
                   <img
                     src={`/tooltips/talents/natural-shapeshifter_${naturalShapeshifterPoints}.png`}
                     alt="Natural Shapeshifter tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '150px',
+                  left: '730px',
+                  cursor: row3Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row3Unlocked ? 1 : 0.5,
+                  zIndex: intensityHovered ? 100 : 1,
+                }}
+                onClick={() => row3Unlocked && setIntensityPoints(p => Math.min(p + 1, 3))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setIntensityPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setIntensityHovered(true)}
+                onMouseLeave={() => setIntensityHovered(false)}
+              >
+                <img
+                  src="/icons/talents/intensity.jpg"
+                  alt="Intensity"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row3Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row3Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{intensityPoints}/3</span>
+                {intensityHovered && (
+                  <img
+                    src={`/tooltips/talents/intensity_${intensityPoints}.png`}
+                    alt="Intensity tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '150px',
+                  left: '800px',
+                  cursor: row3Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row3Unlocked ? 1 : 0.5,
+                  zIndex: subtletyHovered ? 100 : 1,
+                }}
+                onClick={() => row3Unlocked && setSubtletyPoints(p => Math.min(p + 1, 5))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSubtletyPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setSubtletyHovered(true)}
+                onMouseLeave={() => setSubtletyHovered(false)}
+              >
+                <img
+                  src="/icons/talents/subtlety.jpg"
+                  alt="Subtlety"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row3Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row3Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{subtletyPoints}/5</span>
+                {subtletyHovered && (
+                  <img
+                    src={`/tooltips/talents/subtlety_${subtletyPoints}.png`}
+                    alt="Subtlety tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '150px',
+                  left: '875px',
+                  cursor: row3Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row3Unlocked ? 1 : 0.5,
+                  zIndex: omenHovered ? 100 : 1,
+                }}
+                onClick={() => row3Unlocked && setOmenPoints(p => Math.min(p + 1, 1))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setOmenPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setOmenHovered(true)}
+                onMouseLeave={() => setOmenHovered(false)}
+              >
+                <img
+                  src="/icons/talents/omen-of-clarity.jpg"
+                  alt="Omen of Clarity"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row3Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row3Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{omenPoints}/1</span>
+                {omenHovered && (
+                  <img
+                    src="/tooltips/talents/omen-of-clarity.png"
+                    alt="Omen of Clarity tooltip"
                     style={{
                       position: 'absolute',
                       top: '50px',
