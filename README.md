@@ -54,10 +54,18 @@ Customize your healing setup with a flexible action bar system. Left-click on an
 
 All configurations are saved to your browser's local storage and persist between sessions. Can Import/Export pre-set action bars and macros.  
 
-## Raid Composition  
+## Raid Composition
 
-Configure your 25-man raid with any combination of TBC classes and specializations. The raid composition affects how damage is distributed and how NPC healers prioritize their targets.  
-Players can left-click on a grid space to select classes. Right-click on a player to optionally set their name (can be useful for macros). Tanks will hold aggro on bosses. DPS classes don't currently matter, and each DPS player in your raid will do ~500 DPS on average.  
-Resto Shamans will help heal the raid with Chain Heal. I am planning to add support for Paladins and Priest bots to also help heal the raid and tanks, respectively. TODO: Add support for shadow priests (ie having a Spriest in your party will increase your mana regen)  
+Configure your 25-man raid with any combination of TBC classes and specializations. Left-click a slot to select a spec, right-click to set a player name (useful for macros).
 
-Currently Resto Shamans will cast Chain Heal on the raid. TODO: Will add functionality to allow Holy Paladins and Priests to heal as well.  
+| Role | Behavior |
+|------|----------|
+| **Prot Warrior** | 5% miss, 20% dodge, 15% parry, 30% block (1,800 block value). |
+| **Prot Paladin** | 5% miss, 18% dodge, 14% parry, 35% block (1,600 block value). |
+| **Feral Druid** | 5% miss, 35% dodge. Cannot parry or block. |
+| **DPS** | Deal ~500 DPS on average to the boss. Specific DPS specs don't affect damage output. |
+| **Resto Shaman** | Casts Chain Heal (2.5s cast) when any raid member drops below 80% HP. Heals 826-943 on primary target, then jumps to 2 additional targets with 50% reduction per jump. |
+| **Holy Paladin** | Casts Holy Light (1.85s cast) when tanks drop below 90% or any raid member below 80% HP. Heals 4,400-4,800. Prioritizes tanks. 32% crit chance for double healing. |
+| **Holy Priest** | Casts Circle of Healing (instant, 1.3s GCD) when any raid member drops below 80% HP. Heals 1,000-1,600 to each member of the most damaged group (up to 5 targets). 14% crit chance. |
+
+TODO: Add support for Shadow Priests (having one in your party increases mana regen).
