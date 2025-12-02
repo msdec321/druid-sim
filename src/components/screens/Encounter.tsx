@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getEncounter, getSpell, getSpec, CLASS_INFO, PLAYER_SPEC_ID, getGearPreset, DEFAULT_GEAR_PRESET, isMeleeSpec } from '../../data';
 import { ACTION_BARS, calculateCombatStats, calculateGCD } from '../../types';
 import type { Encounter as EncounterType, RaidMember, ActionBarsConfig, KeybindConfig, ActionBarId, RaidComposition, CombatStats, ActiveHoT, Macro } from '../../types';
-import { applyLifebloom, applyRegrowth, applySwiftmend, canSwiftmend, getFirstCastCommand, findRaidMemberByName, getAvoidanceStats, rollCombatTable, formatAttackResult, createRestoShamanState, updateNPCHealer, type NPCHealerState, type ChainHealVisual } from '../../game';
+import { applyLifebloom, applyRegrowth, applySwiftmend, canSwiftmend, getFirstCastCommand, findRaidMemberByName, getAvoidanceStats, rollCombatTable, formatAttackResult, createRestoShamanState, createHolyPaladinState, updateNPCHealer, type NPCHealerState, type ChainHealVisual } from '../../game';
 import styles from './Encounter.module.css';
 
 interface EncounterProps {
@@ -57,6 +57,8 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
   // Player movement
   const [playerPosition, setPlayerPosition] = useState<{ x: number; y: number }>({ x: 0, y: 200 });
+  const playerPositionRef = useRef(playerPosition);
+  playerPositionRef.current = playerPosition;
   const movementKeysRef = useRef<Set<string>>(new Set());
 
   // Cast bar state
@@ -128,9 +130,13 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
   // Boss raid damage timer (random target damage)
   const bossRaidDamageTimerRef = useRef<number>(4.0);
-  const BOSS_RAID_DAMAGE_INTERVAL = 4.0; // seconds
-  const BOSS_RAID_DAMAGE_AMOUNT = 3000;
-  const BOSS_RAID_DAMAGE_TARGETS = 6;
+
+  // Meteor Slash timer (for Brutallus-style cone damage)
+  const meteorSlashTimerRef = useRef<number>(10.0);
+  const currentMeteorSlashTankRef = useRef<number>(0); // Which tank currently has aggro
+
+  // All tank IDs for positioning (includes tanks not currently being attacked)
+  const allTankIdsRef = useRef<string[]>([]);
 
   // Raid DPS attack timer
   const raidDpsTimerRef = useRef<number>(1.0);
@@ -149,11 +155,28 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   const chainHealVisualsRef = useRef<ChainHealVisual[]>([]); // Ref for game loop access
   const CHAIN_HEAL_VISUAL_DURATION = 500; // 0.5 seconds in ms
 
+  // Meteor Slash visual effects (cone showing affected area)
+  interface MeteorSlashVisual {
+    id: number;
+    timestamp: number;
+    tankIndex: number;
+  }
+  const [meteorSlashVisuals, setMeteorSlashVisuals] = useState<MeteorSlashVisual[]>([]);
+  const meteorSlashVisualsRef = useRef<MeteorSlashVisual[]>([]);
+  const meteorSlashVisualIdRef = useRef(0);
+  const METEOR_SLASH_VISUAL_DURATION = 800; // 0.8 seconds in ms
+
+  // Burn timer (for Brutallus burn DoT application)
+  const burnTimerRef = useRef<number>(20.0);
+  const BURN_DEBUFF_NAME = 'Burn';
+
   // Refs to track current state values for game loop access
   const encounterActiveRef = useRef(encounterActive);
   const bossTargetIdsRef = useRef(bossTargetIds);
+  const encounterRef = useRef(encounter);
   encounterActiveRef.current = encounterActive;
   bossTargetIdsRef.current = bossTargetIds;
+  encounterRef.current = encounter;
   raidMembersRef.current = raidMembers;
   treeOfLifeActiveRef.current = treeOfLifeActive;
   castingRef.current = casting;
@@ -185,9 +208,8 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       const classInfo = spec ? CLASS_INFO[spec.class] : null;
 
       // Health based on role
-      let maxHealth = 8000;
+      let maxHealth = 10000;
       if (spec?.role === 'tank') maxHealth = 18000;
-      else if (spec?.role === 'healer') maxHealth = 8500;
 
       return {
         id: `raid-${index}`,
@@ -783,12 +805,16 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     const initialRaidMembers = createRaidFromComposition(raidComposition);
     setRaidMembers(initialRaidMembers);
 
-    // Initialize NPC healers (find all resto shamans in raid composition)
+    // Initialize NPC healers (find all resto shamans and holy paladins in raid composition)
     const npcHealers: NPCHealerState[] = [];
     raidComposition.slots.forEach((slot, index) => {
       if (slot.specId === 'shaman-restoration') {
         npcHealers.push(createRestoShamanState(`raid-${index}`));
         console.log(`Initialized NPC Resto Shaman healer at raid slot ${index}`);
+      }
+      if (slot.specId === 'paladin-holy') {
+        npcHealers.push(createHolyPaladinState(`raid-${index}`));
+        console.log(`Initialized NPC Holy Paladin healer at raid slot ${index}`);
       }
     });
     npcHealersRef.current = npcHealers;
@@ -805,14 +831,34 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     // Determine number of bosses (default 1)
     const bossCount = enc.bossCount ?? 1;
 
-    // Assign tanks to bosses (one tank per boss)
+    // Determine number of tanks needed for positioning (defaults to bossCount)
+    // This is used for positioning tanks around the boss(es)
+    const tankCount = enc.tankCount ?? bossCount;
+
+    // Store all tank IDs for positioning purposes
+    const allTankIds: string[] = [];
+    for (let i = 0; i < tankCount; i++) {
+      if (i < tankIndices.length) {
+        allTankIds.push(`raid-${tankIndices[i]}`);
+      }
+    }
+    allTankIdsRef.current = allTankIds;
+
+    // Only assign one tank per boss to receive boss attacks
+    // (other tanks are positioned but not actively tanking until swap)
     const targetIds: string[] = [];
     for (let i = 0; i < bossCount; i++) {
-      if (i < tankIndices.length) {
-        targetIds.push(`raid-${tankIndices[i]}`);
+      if (i < allTankIds.length) {
+        targetIds.push(allTankIds[i]);
       }
     }
     setBossTargetIds(targetIds);
+
+    // Initialize the Meteor Slash tank to the first tank
+    currentMeteorSlashTankRef.current = 0;
+
+    // Initialize burn timer
+    burnTimerRef.current = enc.phases[0]?.damagePattern?.burn?.interval ?? 20;
 
     // Initialize bosses
     const initialBosses: BossState[] = [];
@@ -1146,13 +1192,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         }
       }
 
-      // Boss raid damage processing (random targets)
-      if (encounterActiveRef.current) {
+      // Boss raid damage processing (random targets) - only if encounter has randomTargetDamage configured
+      const randomTargetConfig = encounterRef.current?.phases[0]?.damagePattern?.randomTargetDamage;
+      if (encounterActiveRef.current && randomTargetConfig) {
         bossRaidDamageTimerRef.current -= deltaSeconds;
 
         if (bossRaidDamageTimerRef.current <= 0) {
           // Reset timer
-          bossRaidDamageTimerRef.current = BOSS_RAID_DAMAGE_INTERVAL;
+          bossRaidDamageTimerRef.current = randomTargetConfig.interval;
 
           // Select random targets and apply damage
           setRaidMembers(prevMembers => {
@@ -1160,17 +1207,17 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             const aliveMembers = prevMembers.filter(m => !m.isDead);
             if (aliveMembers.length === 0) return prevMembers;
 
-            // Randomly select targets (up to BOSS_RAID_DAMAGE_TARGETS)
+            // Randomly select targets (up to configured target count)
             const shuffled = [...aliveMembers].sort(() => Math.random() - 0.5);
-            const targets = shuffled.slice(0, Math.min(BOSS_RAID_DAMAGE_TARGETS, shuffled.length));
+            const targets = shuffled.slice(0, Math.min(randomTargetConfig.targetCount, shuffled.length));
             const targetIds = new Set(targets.map(t => t.id));
 
-            console.log(`Boss raid damage hits: ${targets.map(t => t.name).join(', ')} for ${BOSS_RAID_DAMAGE_AMOUNT} each`);
+            console.log(`Boss raid damage hits: ${targets.map(t => t.name).join(', ')} for ${randomTargetConfig.damage} each`);
 
             return prevMembers.map(member => {
               if (!targetIds.has(member.id)) return member;
 
-              const newHealth = Math.max(0, member.currentHealth - BOSS_RAID_DAMAGE_AMOUNT);
+              const newHealth = Math.max(0, member.currentHealth - randomTargetConfig.damage);
 
               return {
                 ...member,
@@ -1180,6 +1227,420 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             });
           });
         }
+      }
+
+      // Meteor Slash processing (Brutallus-style cone damage with stacking debuff)
+      const meteorSlashConfig = encounterRef.current?.phases[0]?.damagePattern?.meteorSlash;
+      if (encounterActiveRef.current && meteorSlashConfig) {
+        meteorSlashTimerRef.current -= deltaSeconds;
+
+        if (meteorSlashTimerRef.current <= 0) {
+          // Reset timer with random delay (0-4 seconds after cooldown)
+          const randomDelay = Math.random() * 4;
+          meteorSlashTimerRef.current = meteorSlashConfig.interval + randomDelay;
+
+          // Get the current tank with aggro (use allTankIdsRef since bossTargetIds only has the active tank)
+          const tankIndex = currentMeteorSlashTankRef.current;
+          const tankTargetId = allTankIdsRef.current[tankIndex];
+
+          // Create visual effect for the cone
+          const newVisual: MeteorSlashVisual = {
+            id: meteorSlashVisualIdRef.current++,
+            timestamp: Date.now(),
+            tankIndex,
+          };
+          meteorSlashVisualsRef.current = [...meteorSlashVisualsRef.current, newVisual];
+          setMeteorSlashVisuals(meteorSlashVisualsRef.current);
+
+          // Find all players standing within the cone behind this tank
+          const currentEncounter = encounterRef.current;
+          const tankPos = currentEncounter?.tankPositions?.[tankIndex];
+          const rangedGroup = currentEncounter?.rangedGroups?.[tankIndex];
+
+          // Get cone geometry
+          const coneSpread = rangedGroup?.coneSpread ?? Math.PI / 2;
+          const coneMaxDist = rangedGroup?.coneMaxDistance ?? 260;
+          const coneDirection = tankPos?.angle ?? 0;
+          const halfSpread = coneSpread / 2;
+
+          // Tank position (relative to boss at origin)
+          const tankX = tankPos ? Math.cos(tankPos.angle) * tankPos.radius : 0;
+          const tankY = tankPos ? Math.sin(tankPos.angle) * tankPos.radius : 0;
+
+          // Helper to check if a position is inside the cone
+          const isInsideCone = (px: number, py: number): boolean => {
+            // Vector from tank to player
+            const dx = px - tankX;
+            const dy = py - tankY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Check distance (must be within cone range, but also close enough to tank counts)
+            if (distance > coneMaxDist) return false;
+
+            // Check angle - get angle from tank to player
+            const angleToPlayer = Math.atan2(dy, dx);
+
+            // Calculate angular difference from cone direction
+            let angleDiff = angleToPlayer - coneDirection;
+            // Normalize to [-PI, PI]
+            while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+            // Player is in cone if within half spread of cone direction
+            return Math.abs(angleDiff) <= halfSpread;
+          };
+
+          // Helper to get member's position (relative to boss at origin)
+          const getMemberPosition = (member: RaidMember, allMembers: RaidMember[]): { x: number; y: number } => {
+            const memberWithSpec = member as RaidMember & { specId?: string };
+            const spec = memberWithSpec.specId ? getSpec(memberWithSpec.specId) : null;
+            const isMelee = spec ? isMeleeSpec(spec.id) : false;
+            const isPlayer = memberWithSpec.specId === PLAYER_SPEC_ID;
+
+            // For player, use their actual position (from ref for current value)
+            if (isPlayer) {
+              return { x: playerPositionRef.current.x, y: playerPositionRef.current.y };
+            }
+
+            // Check if this is a tank
+            const memberTankIndex = allTankIdsRef.current.indexOf(member.id);
+            if (memberTankIndex !== -1) {
+              const memberTankPos = currentEncounter?.tankPositions?.[memberTankIndex];
+              if (memberTankPos) {
+                return {
+                  x: Math.cos(memberTankPos.angle) * memberTankPos.radius,
+                  y: Math.sin(memberTankPos.angle) * memberTankPos.radius,
+                };
+              }
+            }
+
+            // For other members, calculate their positioned location
+            const meleeMembers = allMembers.filter(m => {
+              const s = (m as RaidMember & { specId?: string }).specId;
+              return s && isMeleeSpec(s) && !allTankIdsRef.current.includes(m.id);
+            });
+            const rangedMembers = allMembers.filter(m => {
+              const s = (m as RaidMember & { specId?: string }).specId;
+              return s && !isMeleeSpec(s);
+            });
+
+            if (isMelee) {
+              // Melee positioning
+              const customMelee = currentEncounter?.meleePosition;
+              if (customMelee) {
+                const meleeIndex = meleeMembers.findIndex(m => m.id === member.id);
+                const meleeCount = meleeMembers.length;
+                const angleRange = customMelee.endAngle - customMelee.startAngle;
+                const angle = customMelee.startAngle + angleRange * (meleeIndex / Math.max(1, meleeCount - 1));
+                const radiusRange = customMelee.maxRadius - customMelee.minRadius;
+                const radius = customMelee.minRadius + radiusRange * ((meleeIndex % 3) / 2);
+                return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+              }
+            } else {
+              // Ranged positioning - use cone positioning logic
+              const rangedIndex = rangedMembers.findIndex(m => m.id === member.id);
+              const rangedCount = rangedMembers.length;
+              const rangedGroups = currentEncounter?.rangedGroups ?? [];
+
+              if (rangedGroups.length > 0) {
+                const groupCount = rangedGroups.length;
+                const perGroup = Math.ceil(rangedCount / groupCount);
+                const groupIndex = Math.min(Math.floor(rangedIndex / perGroup), groupCount - 1);
+                const indexInGroup = rangedIndex - (groupIndex * perGroup);
+
+                const group = rangedGroups[groupIndex];
+                if (group.tankIndex !== undefined && currentEncounter?.tankPositions) {
+                  const grpTankPos = currentEncounter.tankPositions[group.tankIndex];
+                  if (grpTankPos) {
+                    // Triangular cone formation
+                    let row = 0;
+                    let startIndex = 0;
+                    while (startIndex + (row + 2) <= indexInGroup) {
+                      startIndex += (row + 2);
+                      row++;
+                    }
+                    const indexInRow = indexInGroup - startIndex;
+                    const playersInRow = row + 2;
+
+                    const minDist = group.coneMinDistance ?? 40;
+                    const maxDist = group.coneMaxDistance ?? 120;
+                    const rowSpacing = (maxDist - minDist) / 4;
+                    let distFromTank = minDist + row * rowSpacing;
+
+                    // Check if this player has Burn - if so, smoothly move them outside the cone
+                    const burnDebuff = member.debuffs.find(d => d.name === 'Burn');
+                    if (burnDebuff) {
+                      const burnDuration = 60; // Total burn duration
+                      const walkOutTime = 2; // Seconds to walk out
+                      const walkBackTime = 2; // Seconds to walk back in
+                      const timeWithBurn = burnDuration - burnDebuff.remainingDuration;
+
+                      // Calculate walk out/in progress (0 = in cone, 1 = fully out)
+                      let walkProgress = 0;
+                      if (burnDebuff.remainingDuration <= walkBackTime) {
+                        // Walking back in (burn about to expire)
+                        walkProgress = burnDebuff.remainingDuration / walkBackTime;
+                      } else if (timeWithBurn < walkOutTime) {
+                        // Walking out (burn just applied)
+                        walkProgress = timeWithBurn / walkOutTime;
+                      } else {
+                        // Fully out
+                        walkProgress = 1;
+                      }
+
+                      // Smoothly interpolate distance from normal position to outside cone
+                      const normalDist = distFromTank;
+                      const outDist = maxDist + 60;
+                      distFromTank = normalDist + (outDist - normalDist) * walkProgress;
+                    }
+
+                    const perpAngle = grpTankPos.angle + Math.PI / 2;
+                    const spreadWidth = distFromTank * Math.tan((group.coneSpread ?? Math.PI / 3) / 2) * 2;
+                    const playerSpacing = spreadWidth / (playersInRow + 1);
+                    const horizontalOffset = (indexInRow - (playersInRow - 1) / 2) * playerSpacing;
+
+                    const grpTankX = Math.cos(grpTankPos.angle) * grpTankPos.radius;
+                    const grpTankY = Math.sin(grpTankPos.angle) * grpTankPos.radius;
+                    return {
+                      x: grpTankX + Math.cos(grpTankPos.angle) * distFromTank + Math.cos(perpAngle) * horizontalOffset,
+                      y: grpTankY + Math.sin(grpTankPos.angle) * distFromTank + Math.sin(perpAngle) * horizontalOffset,
+                    };
+                  }
+                }
+              }
+            }
+
+            // Fallback
+            return { x: 0, y: 150 };
+          };
+
+          setRaidMembers(prevMembers => {
+            // Find all players inside the cone
+            const affectedIds = new Set<string>();
+
+            // Always add the tank (they're at the tip of the cone)
+            if (tankTargetId) {
+              affectedIds.add(tankTargetId);
+            }
+
+            // Check each alive member to see if they're in the cone
+            prevMembers.forEach(member => {
+              if (member.isDead) return;
+              if (member.id === tankTargetId) return; // Already added
+
+              const pos = getMemberPosition(member, prevMembers);
+              if (isInsideCone(pos.x, pos.y)) {
+                affectedIds.add(member.id);
+              }
+            });
+
+            // Calculate split damage
+            const affectedCount = affectedIds.size;
+            if (affectedCount === 0) return prevMembers;
+
+            const baseDamage = meteorSlashConfig.damage;
+            const splitDamage = Math.floor(baseDamage / affectedCount);
+
+            console.log(`Meteor Slash hits ${affectedCount} targets for ${splitDamage} each (${baseDamage} total)`);
+
+            // Apply damage and debuff to affected members
+            return prevMembers.map(member => {
+              if (!affectedIds.has(member.id)) return member;
+
+              // Calculate damage modifier from existing debuff stacks
+              const existingDebuff = member.debuffs.find(d => d.name === 'Meteor Slash');
+              const currentStacks = existingDebuff?.stacks ?? 0;
+              const damageModifier = 1 + (currentStacks * meteorSlashConfig.debuffModifier);
+              const finalDamage = Math.floor(splitDamage * damageModifier);
+
+              const newHealth = Math.max(0, member.currentHealth - finalDamage);
+
+              // Update or add debuff
+              let newDebuffs: typeof member.debuffs;
+              if (existingDebuff) {
+                // Increase stack and refresh duration
+                newDebuffs = member.debuffs.map(d => {
+                  if (d.name === 'Meteor Slash') {
+                    return {
+                      ...d,
+                      stacks: (d.stacks ?? 1) + 1,
+                      remainingDuration: meteorSlashConfig.debuffDuration,
+                    };
+                  }
+                  return d;
+                });
+              } else {
+                // Add new debuff
+                newDebuffs = [
+                  ...member.debuffs,
+                  {
+                    id: `meteor-slash-${member.id}-${Date.now()}`,
+                    name: 'Meteor Slash',
+                    remainingDuration: meteorSlashConfig.debuffDuration,
+                    stacks: 1,
+                    maxStacks: 99,
+                    damageTakenModifier: meteorSlashConfig.debuffModifier,
+                    damageType: 'fire' as const,
+                  },
+                ];
+              }
+
+              const newStacks = (existingDebuff?.stacks ?? 0) + 1;
+              console.log(`  ${member.name}: ${finalDamage} damage (${currentStacks} stacks, ${Math.round(damageModifier * 100)}% modifier), now ${newStacks} stacks`);
+
+              // Check if this is the tank and they hit 3 stacks - trigger tank swap
+              if (member.id === tankTargetId && newStacks >= 3) {
+                // Swap to the other tank
+                const newTankIndex = (tankIndex + 1) % allTankIdsRef.current.length;
+                const newTankId = allTankIdsRef.current[newTankIndex];
+
+                if (newTankId && newTankId !== tankTargetId) {
+                  console.log(`TANK SWAP! ${member.name} has ${newStacks} stacks - swapping aggro to tank ${newTankIndex + 1}`);
+                  currentMeteorSlashTankRef.current = newTankIndex;
+
+                  // Update boss target to the new tank
+                  setBossTargetIds([newTankId]);
+                }
+              }
+
+              return {
+                ...member,
+                currentHealth: newHealth,
+                isDead: newHealth <= 0,
+                debuffs: newDebuffs,
+              };
+            });
+          });
+        }
+      }
+
+      // Burn application processing (apply to random player every interval)
+      const burnConfig = encounterRef.current?.phases[0]?.damagePattern?.burn;
+      if (encounterActiveRef.current && burnConfig) {
+        burnTimerRef.current -= deltaSeconds;
+
+        if (burnTimerRef.current <= 0) {
+          // Reset timer
+          burnTimerRef.current = burnConfig.interval;
+
+          // Find a random player who doesn't already have burn
+          setRaidMembers(prevMembers => {
+            // Get alive members without burn
+            const eligibleMembers = prevMembers.filter(m =>
+              !m.isDead && !m.debuffs.some(d => d.name === BURN_DEBUFF_NAME)
+            );
+
+            if (eligibleMembers.length === 0) {
+              console.log('Burn: No eligible targets (all dead or already burning)');
+              return prevMembers;
+            }
+
+            // Pick random target
+            const targetIndex = Math.floor(Math.random() * eligibleMembers.length);
+            const target = eligibleMembers[targetIndex];
+
+            console.log(`Burn applied to ${target.name}!`);
+
+            // Apply burn debuff to the selected target
+            return prevMembers.map(member => {
+              if (member.id !== target.id) return member;
+
+              const newDebuffs = [
+                ...member.debuffs,
+                {
+                  id: `burn-${member.id}-${Date.now()}`,
+                  name: BURN_DEBUFF_NAME,
+                  remainingDuration: burnConfig.duration,
+                  damagePerTick: burnConfig.baseDamage,
+                  tickInterval: burnConfig.tickInterval,
+                  nextTickIn: burnConfig.tickInterval,
+                  damageType: 'fire' as const,
+                },
+              ];
+
+              return {
+                ...member,
+                debuffs: newDebuffs,
+              };
+            });
+          });
+        }
+      }
+
+      // Burn tick processing (damage over time with escalating damage)
+      // Note: Duration is decremented by the general debuff processing below, so we only handle tick timing here
+      if (encounterActiveRef.current && burnConfig) {
+        setRaidMembers(prevMembers => {
+          let membersChanged = false;
+
+          const updatedMembers = prevMembers.map(member => {
+            if (member.isDead) return member;
+
+            const burnDebuff = member.debuffs.find(d => d.name === BURN_DEBUFF_NAME);
+            if (!burnDebuff) return member;
+
+            // Count down the tick timer
+            const newNextTickIn = (burnDebuff.nextTickIn ?? burnConfig.tickInterval) - deltaSeconds;
+
+            // Check if it's time to tick
+            if (newNextTickIn <= 0) {
+              membersChanged = true;
+
+              // Calculate damage based on time elapsed (doubles every 10 seconds)
+              // Duration counts down from 60, so timeElapsed = 60 - remainingDuration
+              const timeElapsed = burnConfig.duration - burnDebuff.remainingDuration;
+              const escalationCount = Math.floor(timeElapsed / burnConfig.escalationInterval);
+              const currentDamage = burnConfig.baseDamage * Math.pow(2, escalationCount);
+
+              // Check for Meteor Slash debuff to calculate damage modifier
+              const meteorSlashDebuff = member.debuffs.find(d => d.name === 'Meteor Slash');
+              const meteorSlashStacks = meteorSlashDebuff?.stacks ?? 0;
+              const damageModifier = 1 + (meteorSlashStacks * (meteorSlashDebuff?.damageTakenModifier ?? 0.75));
+
+              const finalDamage = Math.floor(currentDamage * damageModifier);
+              const newHealth = Math.max(0, member.currentHealth - finalDamage);
+
+              if (meteorSlashStacks > 0) {
+                console.log(`Burn tick on ${member.name}: ${finalDamage} damage (${currentDamage} base × ${damageModifier.toFixed(2)} from ${meteorSlashStacks} Meteor Slash stacks)`);
+              } else {
+                console.log(`Burn tick on ${member.name}: ${finalDamage} damage`);
+              }
+
+              // Update the debuff with reset tick timer (duration handled by general debuff processing)
+              const updatedDebuffs = member.debuffs.map(d => {
+                if (d.name !== BURN_DEBUFF_NAME) return d;
+                return {
+                  ...d,
+                  nextTickIn: burnConfig.tickInterval, // Reset tick timer
+                };
+              });
+
+              return {
+                ...member,
+                currentHealth: newHealth,
+                isDead: newHealth <= 0,
+                debuffs: updatedDebuffs,
+              };
+            }
+
+            // Just update tick timer, no tick yet (duration handled by general debuff processing)
+            membersChanged = true;
+            const updatedDebuffs = member.debuffs.map(d => {
+              if (d.name !== BURN_DEBUFF_NAME) return d;
+              return {
+                ...d,
+                nextTickIn: newNextTickIn,
+              };
+            });
+
+            return {
+              ...member,
+              debuffs: updatedDebuffs,
+            };
+          });
+
+          return membersChanged ? updatedMembers : prevMembers;
+        });
       }
 
       // Raid DPS attacking the boss
@@ -1248,7 +1709,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         const raidSnapshot = raidMembersRef.current.map(m => ({ ...m }));
 
         for (const healer of npcHealersRef.current) {
-          const result = updateNPCHealer(healer, raidSnapshot, deltaSeconds);
+          const result = updateNPCHealer(healer, raidSnapshot, deltaSeconds, bossTargetIdsRef.current);
 
           // Collect heal events
           for (const event of result.healEvents) {
@@ -1304,6 +1765,18 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         if (filtered.length !== chainHealVisualsRef.current.length) {
           chainHealVisualsRef.current = filtered;
           setChainHealVisuals(filtered);
+        }
+      }
+
+      // Clean up old meteor slash visuals
+      if (meteorSlashVisualsRef.current.length > 0) {
+        const now = Date.now();
+        const filtered = meteorSlashVisualsRef.current.filter(
+          v => now - v.timestamp < METEOR_SLASH_VISUAL_DURATION
+        );
+        if (filtered.length !== meteorSlashVisualsRef.current.length) {
+          meteorSlashVisualsRef.current = filtered;
+          setMeteorSlashVisuals(filtered);
         }
       }
 
@@ -1370,6 +1843,42 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
         // Always re-render if there are active HoTs (for smooth sweep animation)
         return hasActiveHoTs ? updatedMembers : prevMembers;
+      });
+
+      // Process debuff durations (tick down and remove expired debuffs)
+      setRaidMembers(prevMembers => {
+        let hasDebuffs = false;
+
+        const updatedMembers = prevMembers.map(member => {
+          if (member.debuffs.length === 0) return member;
+
+          hasDebuffs = true;
+
+          // Process each debuff - tick down duration and filter expired
+          const updatedDebuffs = member.debuffs
+            .map(debuff => ({
+              ...debuff,
+              remainingDuration: debuff.remainingDuration - deltaSeconds,
+            }))
+            .filter(debuff => debuff.remainingDuration > 0);
+
+          // Only update if debuffs changed
+          if (updatedDebuffs.length === member.debuffs.length) {
+            return { ...member, debuffs: updatedDebuffs };
+          }
+
+          // Some debuffs expired
+          const expiredNames = member.debuffs
+            .filter(d => d.remainingDuration - deltaSeconds <= 0)
+            .map(d => d.name);
+          if (expiredNames.length > 0) {
+            console.log(`${member.name}: ${expiredNames.join(', ')} expired`);
+          }
+
+          return { ...member, debuffs: updatedDebuffs };
+        });
+
+        return hasDebuffs ? updatedMembers : prevMembers;
       });
 
       // Add pending heal events as floating text
@@ -1900,7 +2409,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               let bossOffset = 0;
 
               // Check if this member is a tank assigned to a boss
-              const tankIndex = bossTargetIds.indexOf(member.id);
+              const tankIndex = allTankIdsRef.current.indexOf(member.id);
               const isTank = tankIndex !== -1;
 
               // Calculate boss positions (same formula as boss circles)
@@ -1909,33 +2418,126 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               };
 
               if (isTank) {
-                angle = -Math.PI / 2;
-                radius = 50;
-                bossOffset = getBossXOffset(tankIndex);
+                // Check for custom tank positions from encounter definition
+                const customPosition = encounter?.tankPositions?.[tankIndex];
+                if (customPosition) {
+                  angle = customPosition.angle;
+                  radius = customPosition.radius;
+                  // Custom positions are relative to the single boss, no offset needed
+                  bossOffset = 0;
+                } else {
+                  angle = -Math.PI / 2;
+                  radius = 50;
+                  bossOffset = getBossXOffset(tankIndex);
+                }
               } else if (isMelee) {
-                const nonTankMelee = meleeMembers.filter(m => !bossTargetIds.includes(m.id));
+                const nonTankMelee = meleeMembers.filter(m => !allTankIdsRef.current.includes(m.id));
                 const meleeIndex = nonTankMelee.findIndex(m => m.id === member.id);
                 const meleeCount = nonTankMelee.length;
 
-                const bossCount = bosses.length;
-                const meleePerBoss = Math.ceil(meleeCount / bossCount);
-                const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
-                const indexWithinBossGroup = meleeIndex % meleePerBoss;
-                const countInThisBossGroup = assignedBoss < bossCount - 1
-                  ? meleePerBoss
-                  : meleeCount - (meleePerBoss * (bossCount - 1));
+                // Check for custom melee positioning
+                const customMelee = encounter?.meleePosition;
+                if (customMelee) {
+                  const angleRange = customMelee.endAngle - customMelee.startAngle;
+                  angle = customMelee.startAngle + angleRange * (meleeIndex / Math.max(1, meleeCount - 1));
+                  // Stagger radius: alternate between closer and farther
+                  const radiusRange = customMelee.maxRadius - customMelee.minRadius;
+                  radius = customMelee.minRadius + radiusRange * ((meleeIndex % 3) / 2);
+                } else {
+                  const bossCount = bosses.length;
+                  const meleePerBoss = Math.ceil(meleeCount / bossCount);
+                  const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
+                  const indexWithinBossGroup = meleeIndex % meleePerBoss;
+                  const countInThisBossGroup = assignedBoss < bossCount - 1
+                    ? meleePerBoss
+                    : meleeCount - (meleePerBoss * (bossCount - 1));
 
-                angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
-                radius = 50;
-                bossOffset = getBossXOffset(assignedBoss);
+                  angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
+                  radius = 50;
+                  bossOffset = getBossXOffset(assignedBoss);
+                }
               } else {
                 const rangedIndex = rangedMembers.findIndex(m => m.id === member.id);
                 const rangedCount = rangedMembers.length;
-                const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
-                const angleOffset = Math.sin(rangedIndex * 7.3) * 0.3;
-                const radiusOffset = Math.cos(rangedIndex * 5.1) * 40;
-                angle = baseAngle + angleOffset;
-                radius = 200 + radiusOffset;
+
+                // Check for custom ranged groups
+                const customRanged = encounter?.rangedGroups;
+                if (customRanged && customRanged.length > 0) {
+                  // Split ranged evenly between groups
+                  const groupCount = customRanged.length;
+                  const perGroup = Math.ceil(rangedCount / groupCount);
+                  const groupIndex = Math.min(Math.floor(rangedIndex / perGroup), groupCount - 1);
+                  const indexInGroup = rangedIndex - (groupIndex * perGroup);
+                  const countInGroup = groupIndex < groupCount - 1
+                    ? perGroup
+                    : rangedCount - (perGroup * (groupCount - 1));
+
+                  const group = customRanged[groupIndex];
+
+                  // Check if this is cone positioning (relative to tank) or boss-relative
+                  if (group.tankIndex !== undefined && encounter?.tankPositions) {
+                    const tankPos = encounter.tankPositions[group.tankIndex];
+                    if (tankPos) {
+                      // Cone positioning: triangular formation behind tank
+                      // Row 0: 2 players, Row 1: 3 players, Row 2: 4 players, etc.
+                      const coneDirection = tankPos.angle;
+
+                      // Find which row this player is in
+                      let row = 0;
+                      let startIndex = 0;
+                      while (startIndex + (row + 2) <= indexInGroup) {
+                        startIndex += (row + 2);
+                        row++;
+                      }
+                      const indexInRow = indexInGroup - startIndex;
+                      const playersInRow = row + 2;
+
+                      // Distance from tank increases with each row
+                      const minDist = group.coneMinDistance ?? 40;
+                      const maxDist = group.coneMaxDistance ?? 120;
+                      const rowSpacing = (maxDist - minDist) / 4; // Spread across ~4 rows
+                      const distFromTank = minDist + row * rowSpacing;
+
+                      // Horizontal spread - perpendicular to cone direction
+                      // Width increases with distance to maintain cone shape
+                      const perpAngle = coneDirection + Math.PI / 2;
+                      const spreadWidth = distFromTank * Math.tan((group.coneSpread ?? Math.PI / 3) / 2) * 2;
+                      const playerSpacing = spreadWidth / (playersInRow + 1);
+                      const horizontalOffset = (indexInRow - (playersInRow - 1) / 2) * playerSpacing;
+
+                      // Calculate position: move from tank in cone direction, then offset perpendicular
+                      const tankX = Math.cos(tankPos.angle) * tankPos.radius;
+                      const tankY = Math.sin(tankPos.angle) * tankPos.radius;
+                      const playerX = tankX + Math.cos(coneDirection) * distFromTank + Math.cos(perpAngle) * horizontalOffset;
+                      const playerY = tankY + Math.sin(coneDirection) * distFromTank + Math.sin(perpAngle) * horizontalOffset;
+
+                      // Convert back to polar from boss center for rendering
+                      angle = Math.atan2(playerY, playerX);
+                      radius = Math.sqrt(playerX * playerX + playerY * playerY);
+                    } else {
+                      // Fallback if tank position not found
+                      angle = Math.PI * 0.5;
+                      radius = 150;
+                    }
+                  } else if (group.startAngle !== undefined && group.endAngle !== undefined) {
+                    // Boss-relative positioning
+                    const angleRange = group.endAngle - group.startAngle;
+                    angle = group.startAngle + angleRange * (indexInGroup / Math.max(1, countInGroup - 1));
+                    // Stagger radius for variety
+                    const radiusRange = (group.maxRadius ?? 200) - (group.minRadius ?? 150);
+                    radius = (group.minRadius ?? 150) + radiusRange * ((indexInGroup % 3) / 2);
+                  } else {
+                    // Fallback
+                    angle = Math.PI * 0.5;
+                    radius = 150;
+                  }
+                } else {
+                  const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
+                  const angleOffset = Math.sin(rangedIndex * 7.3) * 0.3;
+                  const radiusOffset = Math.cos(rangedIndex * 5.1) * 40;
+                  angle = baseAngle + angleOffset;
+                  radius = 200 + radiusOffset;
+                }
               }
 
               const x = isPlayer ? playerPosition.x : Math.cos(angle) * radius + bossOffset;
@@ -1997,6 +2599,69 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         </svg>
       )}
 
+      {/* Meteor Slash Cone Visual */}
+      {meteorSlashVisuals.length > 0 && encounter?.tankPositions && (
+        <svg className={styles.meteorSlashSvg} style={{ overflow: 'visible' }}>
+          {meteorSlashVisuals.map((visual) => {
+            const age = Date.now() - visual.timestamp;
+            const opacity = Math.max(0, 1 - age / METEOR_SLASH_VISUAL_DURATION);
+
+            // Get the tank position for this visual
+            const tankPos = encounter.tankPositions?.[visual.tankIndex];
+            if (!tankPos) return null;
+
+            // Get cone spread from ranged groups config
+            const rangedGroup = encounter.rangedGroups?.[visual.tankIndex];
+            const coneSpread = rangedGroup?.coneSpread ?? Math.PI / 2;
+            const coneMaxDist = rangedGroup?.coneMaxDistance ?? 260;
+
+            // Calculate cone geometry
+            // Boss is at center (50%, 280px from top)
+            const centerX = window.innerWidth / 2;
+            const baseY = 280;
+
+            // Tank position
+            const tankX = centerX + Math.cos(tankPos.angle) * tankPos.radius;
+            const tankY = baseY + Math.sin(tankPos.angle) * tankPos.radius;
+
+            // Cone direction (away from boss, same as tank angle)
+            const coneDirection = tankPos.angle;
+            const halfSpread = coneSpread / 2;
+
+            // Calculate cone arc points
+            const leftAngle = coneDirection - halfSpread;
+            const rightAngle = coneDirection + halfSpread;
+
+            // Far edge of cone (at coneMaxDist from tank)
+            const farLeftX = tankX + Math.cos(leftAngle) * coneMaxDist;
+            const farLeftY = tankY + Math.sin(leftAngle) * coneMaxDist;
+            const farRightX = tankX + Math.cos(rightAngle) * coneMaxDist;
+            const farRightY = tankY + Math.sin(rightAngle) * coneMaxDist;
+
+            // Create arc path for the far edge
+            const arcRadius = coneMaxDist;
+            const largeArcFlag = coneSpread > Math.PI ? 1 : 0;
+
+            // Path: start at tank, line to far left, arc to far right, line back to tank
+            const pathD = `
+              M ${tankX} ${tankY}
+              L ${farLeftX} ${farLeftY}
+              A ${arcRadius} ${arcRadius} 0 ${largeArcFlag} 1 ${farRightX} ${farRightY}
+              Z
+            `;
+
+            return (
+              <path
+                key={visual.id}
+                d={pathD}
+                className={styles.meteorSlashCone}
+                style={{ opacity }}
+              />
+            );
+          })}
+        </svg>
+      )}
+
       {/* Floating Combat Text */}
       {floatingText.map((ft) => {
         // Find the member to get their position
@@ -2024,7 +2689,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         let bossOffset = 0;
 
         // Check if this member is a tank assigned to a boss
-        const tankIndex = bossTargetIds.indexOf(member.id);
+        const tankIndex = allTankIdsRef.current.indexOf(member.id);
         const isTank = tankIndex !== -1;
 
         // Calculate boss positions (same formula as boss circles)
@@ -2033,33 +2698,133 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         };
 
         if (isTank) {
-          angle = -Math.PI / 2;
-          radius = 50;
-          bossOffset = getBossXOffset(tankIndex);
+          // Check for custom tank positions from encounter definition
+          const customPosition = encounter?.tankPositions?.[tankIndex];
+          if (customPosition) {
+            angle = customPosition.angle;
+            radius = customPosition.radius;
+            // Custom positions are relative to the single boss, no offset needed
+            bossOffset = 0;
+          } else {
+            angle = -Math.PI / 2;
+            radius = 50;
+            bossOffset = getBossXOffset(tankIndex);
+          }
         } else if (isMelee) {
-          const nonTankMelee = meleeMembers.filter(m => !bossTargetIds.includes(m.id));
+          const nonTankMelee = meleeMembers.filter(m => !allTankIdsRef.current.includes(m.id));
           const meleeIndex = nonTankMelee.findIndex(m => m.id === member.id);
           const meleeCount = nonTankMelee.length;
 
-          const bossCount = bosses.length;
-          const meleePerBoss = Math.ceil(meleeCount / bossCount);
-          const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
-          const indexWithinBossGroup = meleeIndex % meleePerBoss;
-          const countInThisBossGroup = assignedBoss < bossCount - 1
-            ? meleePerBoss
-            : meleeCount - (meleePerBoss * (bossCount - 1));
+          // Check for custom melee positioning
+          const customMelee = encounter?.meleePosition;
+          if (customMelee) {
+            const angleRange = customMelee.endAngle - customMelee.startAngle;
+            angle = customMelee.startAngle + angleRange * (meleeIndex / Math.max(1, meleeCount - 1));
+            // Stagger radius: alternate between closer and farther
+            const radiusRange = customMelee.maxRadius - customMelee.minRadius;
+            radius = customMelee.minRadius + radiusRange * ((meleeIndex % 3) / 2);
+          } else {
+            const bossCount = bosses.length;
+            const meleePerBoss = Math.ceil(meleeCount / bossCount);
+            const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
+            const indexWithinBossGroup = meleeIndex % meleePerBoss;
+            const countInThisBossGroup = assignedBoss < bossCount - 1
+              ? meleePerBoss
+              : meleeCount - (meleePerBoss * (bossCount - 1));
 
-          angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
-          radius = 50;
-          bossOffset = getBossXOffset(assignedBoss);
+            angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
+            radius = 50;
+            bossOffset = getBossXOffset(assignedBoss);
+          }
         } else {
           const rangedIndex = rangedMembers.findIndex(m => m.id === member.id);
           const rangedCount = rangedMembers.length;
-          const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
-          const angleOffset = (Math.sin(rangedIndex * 7.3) * 0.3);
-          const radiusOffset = (Math.cos(rangedIndex * 5.1) * 40);
-          angle = baseAngle + angleOffset;
-          radius = 200 + radiusOffset;
+
+          // Check for custom ranged groups
+          const customRanged = encounter?.rangedGroups;
+          if (customRanged && customRanged.length > 0) {
+            // Split ranged evenly between groups
+            const groupCount = customRanged.length;
+            const perGroup = Math.ceil(rangedCount / groupCount);
+            const groupIndex = Math.min(Math.floor(rangedIndex / perGroup), groupCount - 1);
+            const indexInGroup = rangedIndex - (groupIndex * perGroup);
+            const countInGroup = groupIndex < groupCount - 1
+              ? perGroup
+              : rangedCount - (perGroup * (groupCount - 1));
+
+            const group = customRanged[groupIndex];
+
+            // Check if this is cone positioning (relative to tank) or boss-relative
+            if (group.tankIndex !== undefined && encounter?.tankPositions) {
+              const tankPos = encounter.tankPositions[group.tankIndex];
+              if (tankPos) {
+                // Cone positioning: triangular formation behind tank
+                // Row 0: 2 players, Row 1: 3 players, Row 2: 4 players, etc.
+                const coneDirection = tankPos.angle;
+
+                // Find which row this player is in
+                let row = 0;
+                let startIndex = 0;
+                while (startIndex + (row + 2) <= indexInGroup) {
+                  startIndex += (row + 2);
+                  row++;
+                }
+                const indexInRow = indexInGroup - startIndex;
+                const playersInRow = row + 2;
+
+                // Distance from tank increases with each row
+                const minDist = group.coneMinDistance ?? 40;
+                const maxDist = group.coneMaxDistance ?? 120;
+                const rowSpacing = (maxDist - minDist) / 4; // Spread across ~4 rows
+                let distFromTank = minDist + row * rowSpacing;
+
+                // Check if this player has Burn - if so, move them outside the cone
+                const hasBurn = member.debuffs.some(d => d.name === 'Burn');
+                if (hasBurn) {
+                  // Position beyond the cone's max distance (walked out)
+                  distFromTank = maxDist + 60;
+                }
+
+                // Horizontal spread - perpendicular to cone direction
+                // Width increases with distance to maintain cone shape
+                const perpAngle = coneDirection + Math.PI / 2;
+                const spreadWidth = distFromTank * Math.tan((group.coneSpread ?? Math.PI / 3) / 2) * 2;
+                const playerSpacing = spreadWidth / (playersInRow + 1);
+                const horizontalOffset = (indexInRow - (playersInRow - 1) / 2) * playerSpacing;
+
+                // Calculate position: move from tank in cone direction, then offset perpendicular
+                const tankX = Math.cos(tankPos.angle) * tankPos.radius;
+                const tankY = Math.sin(tankPos.angle) * tankPos.radius;
+                const playerX = tankX + Math.cos(coneDirection) * distFromTank + Math.cos(perpAngle) * horizontalOffset;
+                const playerY = tankY + Math.sin(coneDirection) * distFromTank + Math.sin(perpAngle) * horizontalOffset;
+
+                // Convert back to polar from boss center for rendering
+                angle = Math.atan2(playerY, playerX);
+                radius = Math.sqrt(playerX * playerX + playerY * playerY);
+              } else {
+                // Fallback if tank position not found
+                angle = Math.PI * 0.5;
+                radius = 150;
+              }
+            } else if (group.startAngle !== undefined && group.endAngle !== undefined) {
+              // Boss-relative positioning
+              const angleRange = group.endAngle - group.startAngle;
+              angle = group.startAngle + angleRange * (indexInGroup / Math.max(1, countInGroup - 1));
+              // Stagger radius for variety
+              const radiusRange = (group.maxRadius ?? 200) - (group.minRadius ?? 150);
+              radius = (group.minRadius ?? 150) + radiusRange * ((indexInGroup % 3) / 2);
+            } else {
+              // Fallback
+              angle = Math.PI * 0.5;
+              radius = 150;
+            }
+          } else {
+            const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
+            const angleOffset = (Math.sin(rangedIndex * 7.3) * 0.3);
+            const radiusOffset = (Math.cos(rangedIndex * 5.1) * 40);
+            angle = baseAngle + angleOffset;
+            radius = 200 + radiusOffset;
+          }
         }
 
         // For player, use playerPosition instead of calculated position
@@ -2108,7 +2873,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         let bossOffset = 0; // X offset to position around specific boss
 
         // Check if this member is a tank assigned to a boss
-        const tankIndex = bossTargetIds.indexOf(member.id);
+        const tankIndex = allTankIdsRef.current.indexOf(member.id);
         const isTank = tankIndex !== -1;
 
         // Calculate boss positions (same formula as boss circles)
@@ -2117,39 +2882,139 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         };
 
         if (isTank) {
-          // Tank positioned above their assigned boss
-          angle = -Math.PI / 2; // Straight up
-          radius = 50;
-          bossOffset = getBossXOffset(tankIndex);
+          // Check for custom tank positions from encounter definition
+          const customPosition = encounter?.tankPositions?.[tankIndex];
+          if (customPosition) {
+            angle = customPosition.angle;
+            radius = customPosition.radius;
+            // Custom positions are relative to the single boss, no offset needed
+            bossOffset = 0;
+          } else {
+            // Default: Tank positioned above their assigned boss
+            angle = -Math.PI / 2; // Straight up
+            radius = 50;
+            bossOffset = getBossXOffset(tankIndex);
+          }
         } else if (isMelee) {
           // Filter out tanks from melee positioning
-          const nonTankMelee = meleeMembers.filter(m => !bossTargetIds.includes(m.id));
+          const nonTankMelee = meleeMembers.filter(m => !allTankIdsRef.current.includes(m.id));
           const meleeIndex = nonTankMelee.findIndex(m => m.id === member.id);
           const meleeCount = nonTankMelee.length;
 
-          // Split melee between bosses (first half -> boss 0, second half -> boss 1)
-          const bossCount = bosses.length;
-          const meleePerBoss = Math.ceil(meleeCount / bossCount);
-          const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
-          const indexWithinBossGroup = meleeIndex % meleePerBoss;
-          const countInThisBossGroup = assignedBoss < bossCount - 1
-            ? meleePerBoss
-            : meleeCount - (meleePerBoss * (bossCount - 1));
+          // Check for custom melee positioning
+          const customMelee = encounter?.meleePosition;
+          if (customMelee) {
+            const angleRange = customMelee.endAngle - customMelee.startAngle;
+            angle = customMelee.startAngle + angleRange * (meleeIndex / Math.max(1, meleeCount - 1));
+            // Stagger radius: alternate between closer and farther
+            const radiusRange = customMelee.maxRadius - customMelee.minRadius;
+            radius = customMelee.minRadius + radiusRange * ((meleeIndex % 3) / 2);
+          } else {
+            // Split melee between bosses (first half -> boss 0, second half -> boss 1)
+            const bossCount = bosses.length;
+            const meleePerBoss = Math.ceil(meleeCount / bossCount);
+            const assignedBoss = Math.min(Math.floor(meleeIndex / meleePerBoss), bossCount - 1);
+            const indexWithinBossGroup = meleeIndex % meleePerBoss;
+            const countInThisBossGroup = assignedBoss < bossCount - 1
+              ? meleePerBoss
+              : meleeCount - (meleePerBoss * (bossCount - 1));
 
-          // Spread melee in a semicircle below their assigned boss
-          angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
-          radius = 50;
-          bossOffset = getBossXOffset(assignedBoss);
+            // Spread melee in a semicircle below their assigned boss
+            angle = Math.PI * 0.2 + (Math.PI * 0.6) * (indexWithinBossGroup / Math.max(1, countInThisBossGroup - 1));
+            radius = 50;
+            bossOffset = getBossXOffset(assignedBoss);
+          }
         } else {
           const rangedIndex = rangedMembers.findIndex(m => m.id === member.id);
           const rangedCount = rangedMembers.length;
-          // Spread ranged with randomized positions (centered between bosses)
-          // Use index-based pseudo-random offsets for stability
-          const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
-          const angleOffset = (Math.sin(rangedIndex * 7.3) * 0.3); // ±0.3 radians variation
-          const radiusOffset = (Math.cos(rangedIndex * 5.1) * 40); // ±40px variation
-          angle = baseAngle + angleOffset;
-          radius = 200 + radiusOffset;
+
+          // Check for custom ranged groups
+          const customRanged = encounter?.rangedGroups;
+          if (customRanged && customRanged.length > 0) {
+            // Split ranged evenly between groups
+            const groupCount = customRanged.length;
+            const perGroup = Math.ceil(rangedCount / groupCount);
+            const groupIndex = Math.min(Math.floor(rangedIndex / perGroup), groupCount - 1);
+            const indexInGroup = rangedIndex - (groupIndex * perGroup);
+            const countInGroup = groupIndex < groupCount - 1
+              ? perGroup
+              : rangedCount - (perGroup * (groupCount - 1));
+
+            const group = customRanged[groupIndex];
+
+            // Check if this is cone positioning (relative to tank) or boss-relative
+            if (group.tankIndex !== undefined && encounter?.tankPositions) {
+              const tankPos = encounter.tankPositions[group.tankIndex];
+              if (tankPos) {
+                // Cone positioning: triangular formation behind tank
+                // Row 0: 2 players, Row 1: 3 players, Row 2: 4 players, etc.
+                const coneDirection = tankPos.angle;
+
+                // Find which row this player is in
+                let row = 0;
+                let startIndex = 0;
+                while (startIndex + (row + 2) <= indexInGroup) {
+                  startIndex += (row + 2);
+                  row++;
+                }
+                const indexInRow = indexInGroup - startIndex;
+                const playersInRow = row + 2;
+
+                // Distance from tank increases with each row
+                const minDist = group.coneMinDistance ?? 40;
+                const maxDist = group.coneMaxDistance ?? 120;
+                const rowSpacing = (maxDist - minDist) / 4; // Spread across ~4 rows
+                let distFromTank = minDist + row * rowSpacing;
+
+                // Check if this player has Burn - if so, move them outside the cone
+                const hasBurn = member.debuffs.some(d => d.name === 'Burn');
+                if (hasBurn) {
+                  // Position beyond the cone's max distance (walked out)
+                  distFromTank = maxDist + 60;
+                }
+
+                // Horizontal spread - perpendicular to cone direction
+                // Width increases with distance to maintain cone shape
+                const perpAngle = coneDirection + Math.PI / 2;
+                const spreadWidth = distFromTank * Math.tan((group.coneSpread ?? Math.PI / 3) / 2) * 2;
+                const playerSpacing = spreadWidth / (playersInRow + 1);
+                const horizontalOffset = (indexInRow - (playersInRow - 1) / 2) * playerSpacing;
+
+                // Calculate position: move from tank in cone direction, then offset perpendicular
+                const tankX = Math.cos(tankPos.angle) * tankPos.radius;
+                const tankY = Math.sin(tankPos.angle) * tankPos.radius;
+                const playerX = tankX + Math.cos(coneDirection) * distFromTank + Math.cos(perpAngle) * horizontalOffset;
+                const playerY = tankY + Math.sin(coneDirection) * distFromTank + Math.sin(perpAngle) * horizontalOffset;
+
+                // Convert back to polar from boss center for rendering
+                angle = Math.atan2(playerY, playerX);
+                radius = Math.sqrt(playerX * playerX + playerY * playerY);
+              } else {
+                // Fallback if tank position not found
+                angle = Math.PI * 0.5;
+                radius = 150;
+              }
+            } else if (group.startAngle !== undefined && group.endAngle !== undefined) {
+              // Boss-relative positioning
+              const angleRange = group.endAngle - group.startAngle;
+              angle = group.startAngle + angleRange * (indexInGroup / Math.max(1, countInGroup - 1));
+              // Stagger radius for variety
+              const radiusRange = (group.maxRadius ?? 200) - (group.minRadius ?? 150);
+              radius = (group.minRadius ?? 150) + radiusRange * ((indexInGroup % 3) / 2);
+            } else {
+              // Fallback
+              angle = Math.PI * 0.5;
+              radius = 150;
+            }
+          } else {
+            // Spread ranged with randomized positions (centered between bosses)
+            // Use index-based pseudo-random offsets for stability
+            const baseAngle = Math.PI * 0.1 + (Math.PI * 0.8) * (rangedIndex / Math.max(1, rangedCount - 1));
+            const angleOffset = (Math.sin(rangedIndex * 7.3) * 0.3); // ±0.3 radians variation
+            const radiusOffset = (Math.cos(rangedIndex * 5.1) * 40); // ±40px variation
+            angle = baseAngle + angleOffset;
+            radius = 200 + radiusOffset;
+          }
         }
 
         // Convert polar to cartesian - boss is at top center of page
@@ -2158,10 +3023,10 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         const x = isPlayer ? playerPosition.x : Math.cos(angle) * radius + bossOffset;
         const y = isPlayer ? playerPosition.y : Math.sin(angle) * radius;
 
-        // Check if this is a Resto Shaman with an active cast
+        // Check if this is an NPC healer with an active cast
         const memberSpecId = (member as RaidMember & { specId?: string }).specId;
-        const isRestoShaman = memberSpecId === 'shaman-restoration';
-        const npcHealer = isRestoShaman
+        const isNpcHealerSpec = memberSpecId === 'shaman-restoration' || memberSpecId === 'paladin-holy';
+        const npcHealer = isNpcHealerSpec
           ? npcHealersRef.current.find(h => h.id === member.id)
           : null;
         const isNpcCasting = npcHealer?.currentCast != null;
@@ -2179,19 +3044,36 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             title={member.name}
           >
             {/* NPC Healer Cast Bar */}
-            {isNpcCasting && npcHealer && npcHealer.currentCast?.chainHealResult && (
-              <div className={styles.npcCastBarContainer}>
-                <span className={styles.npcCastBarText}>Chain Heal</span>
-                <div className={styles.npcCastBar}>
-                  <div
-                    className={styles.npcCastBarFill}
-                    style={{
-                      width: `${((npcHealer.currentCast.chainHealResult.castTime - npcHealer.castTimeRemaining) / npcHealer.currentCast.chainHealResult.castTime) * 100}%`,
-                    }}
-                  />
+            {isNpcCasting && npcHealer && npcHealer.currentCast && (() => {
+              const cast = npcHealer.currentCast;
+              const castTime = cast.chainHealResult?.castTime ?? cast.holyLightResult?.castTime ?? 0;
+              const spellName = cast.chainHealResult ? 'Chain Heal' : cast.holyLightResult ? 'Holy Light' : '';
+              if (!castTime || !spellName) return null;
+              return (
+                <div className={styles.npcCastBarContainer}>
+                  <span className={styles.npcCastBarText}>{spellName}</span>
+                  <div className={styles.npcCastBar}>
+                    <div
+                      className={styles.npcCastBarFill}
+                      style={{
+                        width: `${((castTime - npcHealer.castTimeRemaining) / castTime) * 100}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
+            {/* Meteor Slash Debuff Icon */}
+            {(() => {
+              const meteorSlashDebuff = member.debuffs.find(d => d.name === 'Meteor Slash');
+              if (!meteorSlashDebuff) return null;
+              return (
+                <div className={styles.debuffIcon}>
+                  <img src="/icons/meteor-slash.jpg" alt="Meteor Slash" />
+                  <span className={styles.debuffStacks}>{meteorSlashDebuff.stacks ?? 1}</span>
+                </div>
+              );
+            })()}
           </div>
         );
       })}
@@ -2295,6 +3177,9 @@ function RaidSquare({ member, isTargeted, hasAggro, onClick }: RaidSquareProps) 
   const rejuvHot = member.hots.find(hot => hot.spellId === 'rejuvenation');
   const regrowthHot = member.hots.find(hot => hot.spellId === 'regrowth');
 
+  // Find Burn debuff if present
+  const burnDebuff = member.debuffs.find(d => d.name === 'Burn');
+
   return (
     <div
       className={classNames}
@@ -2311,6 +3196,13 @@ function RaidSquare({ member, isTargeted, hasAggro, onClick }: RaidSquareProps) 
         <HoTOverlay
           hot={lifebloomHot}
           maxDuration={7}
+        />
+      )}
+      {/* Burn Overlay */}
+      {burnDebuff && (
+        <BurnOverlay
+          remainingDuration={burnDebuff.remainingDuration}
+          maxDuration={60}
         />
       )}
       {/* Rejuvenation indicator */}
@@ -2362,6 +3254,36 @@ function HoTOverlay({ hot, maxDuration }: HoTOverlayProps) {
       {hot.stacks > 1 && (
         <span className={styles.hotStacks}>{hot.stacks}</span>
       )}
+    </div>
+  );
+}
+
+interface BurnOverlayProps {
+  remainingDuration: number;
+  maxDuration: number;
+}
+
+function BurnOverlay({ remainingDuration, maxDuration }: BurnOverlayProps) {
+  // Calculate the sweep progress (0 = full, 1 = empty)
+  const progress = 1 - (remainingDuration / maxDuration);
+  // Convert to degrees for conic-gradient (clockwise from top)
+  const degrees = progress * 360;
+
+  return (
+    <div className={styles.burnOverlay}>
+      <img
+        src="/icons/burn.jpg"
+        alt="Burn"
+        className={styles.burnIcon}
+        draggable={false}
+      />
+      {/* Clockwise sweep fade overlay */}
+      <div
+        className={styles.burnSweep}
+        style={{
+          background: `conic-gradient(from 0deg, rgba(0,0,0,0.7) ${degrees}deg, transparent ${degrees}deg)`,
+        }}
+      />
     </div>
   );
 }

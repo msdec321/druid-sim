@@ -1,4 +1,4 @@
-import { getAllEncounters } from '../../data';
+import { getTrainingEncounters, getBossEncounters } from '../../data';
 import type { Encounter } from '../../types';
 import styles from '../../styles/shared.module.css';
 import encounterStyles from './EncounterSelect.module.css';
@@ -9,7 +9,8 @@ interface EncounterSelectProps {
 }
 
 export function EncounterSelect({ onSelect, onBack }: EncounterSelectProps) {
-  const encounters = getAllEncounters();
+  const trainingEncounters = getTrainingEncounters();
+  const bossEncounters = getBossEncounters();
 
   return (
     <div className={styles.screen}>
@@ -20,14 +21,32 @@ export function EncounterSelect({ onSelect, onBack }: EncounterSelectProps) {
       <h1 className={styles.title}>Select Encounter</h1>
       <p className={styles.subtitle}>Choose a boss encounter to practice</p>
 
-      <div className={styles.menuList}>
-        {encounters.map((encounter) => (
-          <EncounterCard
-            key={encounter.id}
-            encounter={encounter}
-            onSelect={() => onSelect(encounter.id)}
-          />
-        ))}
+      <div className={encounterStyles.columnsContainer}>
+        <div className={encounterStyles.column}>
+          <h2 className={encounterStyles.columnHeader}>Training Dummies</h2>
+          <div className={encounterStyles.encounterList}>
+            {trainingEncounters.map((encounter) => (
+              <EncounterCard
+                key={encounter.id}
+                encounter={encounter}
+                onSelect={() => onSelect(encounter.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className={encounterStyles.column}>
+          <h2 className={encounterStyles.columnHeader}>Sunwell Plateau</h2>
+          <div className={encounterStyles.encounterList}>
+            {bossEncounters.map((encounter) => (
+              <EncounterCard
+                key={encounter.id}
+                encounter={encounter}
+                onSelect={() => onSelect(encounter.id)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -55,11 +74,14 @@ function EncounterCard({ encounter, onSelect }: EncounterCardProps) {
     return `${minutes} min`;
   };
 
+  const isDisabled = encounter.disabled ?? false;
+
   return (
     <button
-      className={styles.card}
-      onClick={onSelect}
-      style={{ cursor: 'pointer', textAlign: 'left' }}
+      className={`${styles.card} ${isDisabled ? encounterStyles.disabled : ''}`}
+      onClick={isDisabled ? undefined : onSelect}
+      disabled={isDisabled}
+      style={{ cursor: isDisabled ? 'not-allowed' : 'pointer', textAlign: 'left' }}
     >
       <div className={encounterStyles.cardHeader}>
         <h3 className={styles.cardTitle}>{encounter.name}</h3>

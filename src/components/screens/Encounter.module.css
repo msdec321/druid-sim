@@ -452,6 +452,38 @@
   text-shadow: 0 0 2px rgba(0, 255, 136, 0.8);
 }
 
+/* Burn Overlay Styles (debuff with clockwise fade) */
+.burnOverlay {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  z-index: 11;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid #ff4400;
+  box-shadow: 0 0 6px rgba(255, 68, 0, 0.6);
+}
+
+.burnIcon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.burnSweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 /* Rejuvenation indicator - small purple square */
 .rejuvIndicator {
   position: absolute;
@@ -551,6 +583,40 @@
 
 .playerSelfCircle {
   box-shadow: 0 0 10px currentColor;
+}
+
+/* Debuff Icon on Player Circle */
+.debuffIcon {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid #000;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+.debuffIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.debuffStacks {
+  position: absolute;
+  bottom: 0;
+  right: 1px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  line-height: 1;
 }
 
 /* Floating Combat Text */
@@ -769,6 +835,27 @@
   stroke-linecap: round;
   filter: drop-shadow(0 0 6px rgba(255, 221, 0, 0.8))
           drop-shadow(0 0 12px rgba(255, 221, 0, 0.5));
+  transition: opacity 0.1s ease-out;
+}
+
+/* Meteor Slash Cone Visual */
+.meteorSlashSvg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 99;
+  overflow: visible;
+}
+
+.meteorSlashCone {
+  fill: rgba(255, 100, 0, 0.3);
+  stroke: rgba(255, 150, 0, 0.8);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px rgba(255, 100, 0, 0.6))
+          drop-shadow(0 0 20px rgba(255, 50, 0, 0.4));
   transition: opacity 0.1s ease-out;
 }
 

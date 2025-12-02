@@ -10,6 +10,17 @@ export const RESTO_SHAMAN_STATS = {
   spellHasteRating: 320,
 } as const;
 
+// ============================================================================
+// Holy Paladin Configuration
+// ============================================================================
+
+// Holy Paladin stats (as specified)
+export const HOLY_PALADIN_STATS = {
+  bonusHealing: 2600,
+  spellHasteRating: 120,
+  critChance: 0.32, // 32% crit chance
+} as const;
+
 // TBC haste rating to percent conversion at level 70
 const HASTE_RATING_CONVERSION = 15.77;
 
@@ -39,6 +50,19 @@ export const CHAIN_HEAL_DATA = {
   jumpReduction: 0.5, // Each jump heals for 50% of previous
   baseCoefficient: 0.714, // 71.4% spell power coefficient for primary target
   jumpRange: 12.5, // yards (not currently used but documented for future)
+} as const;
+
+// ============================================================================
+// Holy Light Spell Data
+// ============================================================================
+
+export const HOLY_LIGHT_DATA = {
+  // Rank 11 (max at level 70)
+  baseHealMin: 4400,
+  baseHealMax: 4800,
+  manaCost: 840,
+  baseCastTime: 1.85, // seconds (after talents, typical Holy Paladin)
+  critMultiplier: 2.0, // Crits heal for double
 } as const;
 
 // ============================================================================
@@ -233,6 +257,100 @@ export function applyChainHeal(
 }
 
 // ============================================================================
+// Holy Light Calculations
+// ============================================================================
+
+export interface HolyLightResult {
+  targetId: string;
+  healAmount: number;
+  isCrit: boolean;
+  castTime: number;
+  manaCost: number;
+}
+
+/**
+ * Roll base heal amount for Holy Light (random between min and max)
+ */
+function rollHolyLightBaseHeal(): number {
+  return Math.floor(
+    Math.random() * (HOLY_LIGHT_DATA.baseHealMax - HOLY_LIGHT_DATA.baseHealMin + 1) +
+    HOLY_LIGHT_DATA.baseHealMin
+  );
+}
+
+/**
+ * Calculate Holy Light heal amount
+ *
+ * Formula: Heal = Base Heal (no spell power coefficient for simplicity)
+ * Crit: 32% chance to do double healing
+ */
+export function calculateHolyLightAmount(
+  critChance: number = HOLY_PALADIN_STATS.critChance,
+  baseHeal?: number
+): { healAmount: number; isCrit: boolean } {
+  const base = baseHeal ?? rollHolyLightBaseHeal();
+
+  // Roll for crit
+  const isCrit = Math.random() < critChance;
+
+  // Apply crit multiplier if crit
+  const healAmount = isCrit
+    ? Math.floor(base * HOLY_LIGHT_DATA.critMultiplier)
+    : base;
+
+  return { healAmount, isCrit };
+}
+
+/**
+ * Calculate full Holy Light result including cast time
+ */
+export function calculateHolyLight(
+  targetId: string,
+  hasteRating: number = HOLY_PALADIN_STATS.spellHasteRating,
+  critChance: number = HOLY_PALADIN_STATS.critChance
+): HolyLightResult {
+  // Calculate haste-adjusted cast time
+  const hastePercent = calculateSpellHaste(hasteRating);
+  const castTime = calculateCastTimeWithHaste(HOLY_LIGHT_DATA.baseCastTime, hastePercent);
+
+  // Calculate heal amount with crit
+  const { healAmount, isCrit } = calculateHolyLightAmount(critChance);
+
+  return {
+    targetId,
+    healAmount,
+    isCrit,
+    castTime,
+    manaCost: HOLY_LIGHT_DATA.manaCost,
+  };
+}
+
+/**
+ * Apply Holy Light heal to a raid member
+ * Mutates the raid member's health value
+ */
+export function applyHolyLight(
+  raidMembers: RaidMember[],
+  holyLightResult: HolyLightResult
+): { targetId: string; amount: number; overheal: number; isCrit: boolean } | null {
+  const member = raidMembers.find(m => m.id === holyLightResult.targetId);
+  if (!member || member.isDead) return null;
+
+  const missingHealth = member.maxHealth - member.currentHealth;
+  const actualHeal = Math.min(holyLightResult.healAmount, missingHealth);
+  const overheal = holyLightResult.healAmount - actualHeal;
+
+  member.currentHealth = Math.min(member.maxHealth, member.currentHealth + actualHeal);
+
+  return {
+    targetId: member.id,
+    amount: holyLightResult.healAmount,
+    overheal,
+    isCrit: holyLightResult.isCrit,
+  };
+}
+
+// ============================================================================
 // NPC Healer AI
 // ============================================================================
 
@@ -244,6 +362,7 @@ export interface NPCHealerState {
     spellId: string;
     targetId: string;
     chainHealResult?: ChainHealResult;
+    holyLightResult?: HolyLightResult;
   } | null;
   gcdRemaining: number;
   /** Initial delay before the healer starts casting (0-2 seconds) */
@@ -290,6 +409,25 @@ export function createRestoShamanState(id: string): NPCHealerState {
   return {
     id,
     specId: 'shaman-restoration',
+    castTimeRemaining: 0,
+    currentCast: null,
+    gcdRemaining: 0,
+    initialDelay,
+    reactionDelay: 0,
+  };
+}
+
+/**
+ * Initialize NPC healer state for a holy paladin
+ * Includes a random initial delay (0-2s) before they start casting
+ */
+export function createHolyPaladinState(id: string): NPCHealerState {
+  // Random initial delay so paladins don't all start casting at the same time
+  const initialDelay = Math.random() * (INITIAL_DELAY_MAX - INITIAL_DELAY_MIN) + INITIAL_DELAY_MIN;
+
+  return {
+    id,
+    specId: 'paladin-holy',
     castTimeRemaining: 0,
     currentCast: null,
     gcdRemaining: 0,
@@ -359,14 +497,100 @@ export function shouldCastChainHeal(
   return needsHealing;
 }
 
+// ============================================================================
+// Holy Paladin AI
+// ============================================================================
+
+/**
+ * Find the best Holy Light target for a Holy Paladin
+ *
+ * Priority:
+ * 1. Tank with aggro (if below 90% health)
+ * 2. Any other damaged raid member (lowest health first)
+ *
+ * @param raidMembers - All raid members
+ * @param bossTargetIds - IDs of tanks currently holding aggro
+ * @returns Target ID or null if no one needs healing
+ */
+export function findBestHolyLightTarget(
+  raidMembers: RaidMember[],
+  bossTargetIds: string[]
+): string | null {
+  const aliveMembers = raidMembers.filter(m => !m.isDead);
+  if (aliveMembers.length === 0) return null;
+
+  // First, check tanks with aggro
+  for (const tankId of bossTargetIds) {
+    const tank = aliveMembers.find(m => m.id === tankId);
+    if (tank) {
+      const healthPercent = tank.currentHealth / tank.maxHealth;
+      // If tank is below 90%, heal them
+      if (healthPercent < 0.90) {
+        return tank.id;
+      }
+    }
+  }
+
+  // Tank is above 90%, find the most damaged raid member
+  const damagedMembers = aliveMembers
+    .filter(m => m.currentHealth < m.maxHealth)
+    .map(m => ({
+      id: m.id,
+      healthPercent: m.currentHealth / m.maxHealth,
+      healthDeficit: m.maxHealth - m.currentHealth,
+    }))
+    .sort((a, b) => a.healthPercent - b.healthPercent); // Sort by lowest health percent first
+
+  // Return the most damaged member, or null if everyone is full health
+  return damagedMembers.length > 0 ? damagedMembers[0].id : null;
+}
+
+/**
+ * Decide if the paladin should start casting Holy Light
+ * Simple AI: cast if anyone is damaged and we're not already casting
+ */
+export function shouldCastHolyLight(
+  raidMembers: RaidMember[],
+  healerState: NPCHealerState,
+  bossTargetIds: string[]
+): boolean {
+  // Can't cast if already casting or on GCD
+  if (healerState.currentCast || healerState.gcdRemaining > 0) {
+    return false;
+  }
+
+  // Check if tank needs healing (below 90%) or anyone else needs healing
+  const tankNeedsHealing = bossTargetIds.some(tankId => {
+    const tank = raidMembers.find(m => m.id === tankId && !m.isDead);
+    return tank && tank.currentHealth / tank.maxHealth < 0.90;
+  });
+
+  if (tankNeedsHealing) {
+    return true;
+  }
+
+  // Check if anyone else needs healing (below 80% health)
+  const anyoneNeedsHealing = raidMembers.some(
+    m => !m.isDead && m.currentHealth / m.maxHealth < 0.80
+  );
+
+  return anyoneNeedsHealing;
+}
+
 /**
  * Update NPC healer state for one tick
  * Returns heal events and chain heal visual data if a cast completed
+ *
+ * @param healerState - The healer's current state
+ * @param raidMembers - All raid members
+ * @param deltaSeconds - Time since last update
+ * @param bossTargetIds - IDs of tanks currently holding aggro (needed for Holy Paladin targeting)
  */
 export function updateNPCHealer(
   healerState: NPCHealerState,
   raidMembers: RaidMember[],
-  deltaSeconds: number
+  deltaSeconds: number,
+  bossTargetIds: string[] = []
 ): NPCHealerUpdateResult {
   const healEvents: Array<{ targetId: string; amount: number; overheal: number }> = [];
   let chainHealVisual: ChainHealVisual | null = null;
@@ -394,7 +618,7 @@ export function updateNPCHealer(
 
     // Cast complete
     if (healerState.castTimeRemaining <= 0) {
-      // Apply the chain heal
+      // Apply Chain Heal (Resto Shaman)
       if (healerState.currentCast.chainHealResult) {
         const events = applyChainHeal(raidMembers, healerState.currentCast.chainHealResult);
         healEvents.push(...events);
@@ -414,8 +638,25 @@ export function updateNPCHealer(
         console.log(`[NPC Shaman] Chain Heal landed: ${targetNames}`);
       }
 
-      // Start GCD (1.5 seconds base, but already accounted for in cast time)
-      healerState.gcdRemaining = 0; // Chain Heal cast time > GCD, so no additional GCD needed
+      // Apply Holy Light (Holy Paladin)
+      if (healerState.currentCast.holyLightResult) {
+        const event = applyHolyLight(raidMembers, healerState.currentCast.holyLightResult);
+        if (event) {
+          healEvents.push({
+            targetId: event.targetId,
+            amount: event.amount,
+            overheal: event.overheal,
+          });
+
+          // Log the heal
+          const targetName = raidMembers.find(m => m.id === event.targetId)?.name || 'Unknown';
+          const critText = event.isCrit ? ' (CRIT!)' : '';
+          console.log(`[NPC Paladin] Holy Light landed on ${targetName} for ${event.amount}${critText}`);
+        }
+      }
+
+      // Start GCD (cast time > GCD for both spells, so no additional GCD needed)
+      healerState.gcdRemaining = 0;
       healerState.currentCast = null;
       healerState.castTimeRemaining = 0;
 
@@ -426,21 +667,45 @@ export function updateNPCHealer(
 
   // If not casting, decide whether to cast (also check reaction delay)
   if (!healerState.currentCast && healerState.gcdRemaining <= 0 && healerState.reactionDelay <= 0) {
-    if (shouldCastChainHeal(raidMembers, healerState)) {
-      const targetId = findBestChainHealTarget(raidMembers);
+    // Resto Shaman AI
+    if (healerState.specId === 'shaman-restoration') {
+      if (shouldCastChainHeal(raidMembers, healerState)) {
+        const targetId = findBestChainHealTarget(raidMembers);
 
-      if (targetId) {
-        const chainHealResult = calculateChainHeal(raidMembers, targetId);
+        if (targetId) {
+          const chainHealResult = calculateChainHeal(raidMembers, targetId);
 
-        healerState.currentCast = {
-          spellId: 'chain-heal',
-          targetId,
-          chainHealResult,
-        };
-        healerState.castTimeRemaining = chainHealResult.castTime;
+          healerState.currentCast = {
+            spellId: 'chain-heal',
+            targetId,
+            chainHealResult,
+          };
+          healerState.castTimeRemaining = chainHealResult.castTime;
 
-        const targetName = raidMembers.find(m => m.id === targetId)?.name || 'Unknown';
-        console.log(`[NPC Shaman] Casting Chain Heal on ${targetName} (${chainHealResult.castTime.toFixed(2)}s cast)`);
+          const targetName = raidMembers.find(m => m.id === targetId)?.name || 'Unknown';
+          console.log(`[NPC Shaman] Casting Chain Heal on ${targetName} (${chainHealResult.castTime.toFixed(2)}s cast)`);
+        }
+      }
+    }
+
+    // Holy Paladin AI
+    if (healerState.specId === 'paladin-holy') {
+      if (shouldCastHolyLight(raidMembers, healerState, bossTargetIds)) {
+        const targetId = findBestHolyLightTarget(raidMembers, bossTargetIds);
+
+        if (targetId) {
+          const holyLightResult = calculateHolyLight(targetId);
+
+          healerState.currentCast = {
+            spellId: 'holy-light',
+            targetId,
+            holyLightResult,
+          };
+          healerState.castTimeRemaining = holyLightResult.castTime;
+
+          const targetName = raidMembers.find(m => m.id === targetId)?.name || 'Unknown';
+          console.log(`[NPC Paladin] Casting Holy Light on ${targetName} (${holyLightResult.castTime.toFixed(2)}s cast)`);
+        }
       }
     }
   }

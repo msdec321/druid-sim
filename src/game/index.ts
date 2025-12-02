@@ -57,6 +57,9 @@ export {
   RESTO_SHAMAN_STATS,
   SHAMAN_TALENT_CONSTANTS,
   CHAIN_HEAL_DATA,
+  // Holy Paladin constants
+  HOLY_PALADIN_STATS,
+  HOLY_LIGHT_DATA,
   // Chain Heal calculations
   calculateSpellHaste,
   calculateCastTimeWithHaste,
@@ -64,13 +67,21 @@ export {
   selectChainHealTargets,
   calculateChainHeal,
   applyChainHeal,
+  // Holy Light calculations
+  calculateHolyLightAmount,
+  calculateHolyLight,
+  applyHolyLight,
   // NPC Healer AI
   createRestoShamanState,
+  createHolyPaladinState,
   findBestChainHealTarget,
   shouldCastChainHeal,
+  findBestHolyLightTarget,
+  shouldCastHolyLight,
   updateNPCHealer,
   type ChainHealTarget,
   type ChainHealResult,
+  type HolyLightResult,
   type NPCHealerState,
   type ChainHealVisual,
   type NPCHealerUpdateResult,
