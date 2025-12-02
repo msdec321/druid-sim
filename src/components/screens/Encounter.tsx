@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getEncounter, getSpell, getSpec, CLASS_INFO, PLAYER_SPEC_ID, getGearPreset, DEFAULT_GEAR_PRESET, isMeleeSpec } from '../../data';
 import { ACTION_BARS, calculateCombatStats, calculateGCD } from '../../types';
 import type { Encounter as EncounterType, RaidMember, ActionBarsConfig, KeybindConfig, ActionBarId, RaidComposition, CombatStats, ActiveHoT, Macro } from '../../types';
-import { applyLifebloom, applyRegrowth, applySwiftmend, canSwiftmend, getFirstCastCommand, findRaidMemberByName, getAvoidanceStats, rollCombatTable, formatAttackResult, createRestoShamanState, createHolyPaladinState, updateNPCHealer, type NPCHealerState, type ChainHealVisual } from '../../game';
+import { applyLifebloom, applyRegrowth, applySwiftmend, canSwiftmend, getFirstCastCommand, findRaidMemberByName, getAvoidanceStats, rollCombatTable, formatAttackResult, createRestoShamanState, createHolyPaladinState, createHolyPriestState, updateNPCHealer, type NPCHealerState, type ChainHealVisual } from '../../game';
 import styles from './Encounter.module.css';
 
 interface EncounterProps {
@@ -147,6 +147,13 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   // Victory state
   const [encounterVictory, setEncounterVictory] = useState(false);
 
+  // HPS Meter state - track encounter time and effective healing per healer
+  const [encounterElapsedTime, setEncounterElapsedTime] = useState(0);
+  const encounterElapsedTimeRef = useRef(0);
+  // Map healer ID to their total effective healing (excludes overhealing)
+  const [healerEffectiveHealing, setHealerEffectiveHealing] = useState<Record<string, number>>({});
+  const healerEffectiveHealingRef = useRef<Record<string, number>>({});
+
   // NPC Healer state (for resto shamans and other AI healers)
   const npcHealersRef = useRef<NPCHealerState[]>([]);
 
@@ -180,6 +187,15 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   raidMembersRef.current = raidMembers;
   treeOfLifeActiveRef.current = treeOfLifeActive;
   castingRef.current = casting;
+
+  // Helper to track effective healing for a healer (used for HPS meter)
+  const trackEffectiveHealing = useCallback((healerId: string, effectiveAmount: number) => {
+    if (effectiveAmount <= 0) return;
+    healerEffectiveHealingRef.current = {
+      ...healerEffectiveHealingRef.current,
+      [healerId]: (healerEffectiveHealingRef.current[healerId] ?? 0) + effectiveAmount,
+    };
+  }, []);
 
   // Helper to create a unique key for a slot
   const slotKey = (barId: ActionBarId, slotIndex: number) => `${barId}-${slotIndex}`;
@@ -525,6 +541,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             `Swiftmend on ${target.name} - Consumed ${result.consumedHoT}, healed for ${result.healAmount}${result.isCrit ? ' (CRIT!)' : ''}`
           );
 
+          // Track effective healing for HPS meter (healAmount is already effective, excludes overheal)
+          if (result.healAmount > 0) {
+            healerEffectiveHealingRef.current = {
+              ...healerEffectiveHealingRef.current,
+              player: (healerEffectiveHealingRef.current.player ?? 0) + result.healAmount,
+            };
+          }
+
           // Add heal to floating combat text
           const totalHeal = result.healAmount + result.overheal;
           const targetIdForText = target.id;
@@ -656,6 +680,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         console.log(
           `Regrowth on ${target.name} - Direct: ${result.directHeal}${result.directCrit ? ' (CRIT!)' : ''}, HoT: ${result.healPerTick} per tick`
         );
+
+        // Track effective healing for HPS meter (directHeal is already effective, excludes overheal)
+        if (result.directHeal > 0) {
+          healerEffectiveHealingRef.current = {
+            ...healerEffectiveHealingRef.current,
+            player: (healerEffectiveHealingRef.current.player ?? 0) + result.directHeal,
+          };
+        }
 
         // Add direct heal to floating combat text (show total heal amount including overheal)
         const totalDirectHeal = result.directHeal + result.directOverheal;
@@ -805,7 +837,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     const initialRaidMembers = createRaidFromComposition(raidComposition);
     setRaidMembers(initialRaidMembers);
 
-    // Initialize NPC healers (find all resto shamans and holy paladins in raid composition)
+    // Initialize NPC healers (find all resto shamans, holy paladins, and holy priests in raid composition)
     const npcHealers: NPCHealerState[] = [];
     raidComposition.slots.forEach((slot, index) => {
       if (slot.specId === 'shaman-restoration') {
@@ -815,6 +847,10 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       if (slot.specId === 'paladin-holy') {
         npcHealers.push(createHolyPaladinState(`raid-${index}`));
         console.log(`Initialized NPC Holy Paladin healer at raid slot ${index}`);
+      }
+      if (slot.specId === 'priest-holy') {
+        npcHealers.push(createHolyPriestState(`raid-${index}`));
+        console.log(`Initialized NPC Holy Priest healer at raid slot ${index}`);
       }
     });
     npcHealersRef.current = npcHealers;
@@ -902,6 +938,12 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
     // Reset update timer
     lastUpdateRef.current = Date.now();
+
+    // Reset HPS tracking
+    setEncounterElapsedTime(0);
+    encounterElapsedTimeRef.current = 0;
+    setHealerEffectiveHealing({});
+    healerEffectiveHealingRef.current = {};
   }, [encounterId, gearsetId, raidComposition, onExit]);
 
   // Recalculate combat stats when consumable buffs change
@@ -1023,6 +1065,11 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       if (frameCount % 300 === 0) {
         const avgDelta = totalDelta / frameCount;
         console.log(`[Frame Stats] Avg: ${avgDelta.toFixed(1)}ms, Max: ${maxDelta.toFixed(1)}ms, Frames: ${frameCount}`);
+      }
+
+      // Update encounter elapsed time (only when encounter is active)
+      if (encounterActiveRef.current) {
+        encounterElapsedTimeRef.current += deltaSeconds;
       }
 
       // Update GCD (update ref immediately for real-time checks)
@@ -1711,12 +1758,15 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         for (const healer of npcHealersRef.current) {
           const result = updateNPCHealer(healer, raidSnapshot, deltaSeconds, bossTargetIdsRef.current);
 
-          // Collect heal events
+          // Collect heal events and track effective healing for HPS meter
           for (const event of result.healEvents) {
             allHealEvents.push({
               targetId: event.targetId,
               amount: event.amount,
             });
+            // Track effective healing (total - overheal) for this NPC healer
+            const effectiveHealing = event.amount - event.overheal;
+            trackEffectiveHealing(healer.id, effectiveHealing);
           }
 
           // Collect chain heal visuals
@@ -1780,7 +1830,59 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         }
       }
 
-      // Process all HoTs on all raid members (immutable update)
+      // Process all HoTs on all raid members
+      // IMPORTANT: Calculate healing BEFORE setRaidMembers to avoid double-counting in React StrictMode
+      const hotHealEvents: Array<{ sourceId: string; effectiveHealing: number }> = [];
+
+      // Pre-calculate HoT heals using the ref snapshot (runs exactly once per frame)
+      for (const member of raidMembersRef.current) {
+        if (member.hots.length === 0) continue;
+
+        let simulatedHealth = member.currentHealth;
+
+        for (const hot of member.hots) {
+          // Simulate tick timing
+          let nextTickIn = hot.nextTickIn - deltaSeconds;
+          let remainingDuration = hot.remainingDuration - deltaSeconds;
+
+          // Process ticks
+          while (nextTickIn <= 0 && remainingDuration > 0) {
+            const healAmount = hot.healPerTick;
+            const missingHealth = member.maxHealth - simulatedHealth;
+            const actualHeal = Math.min(healAmount, missingHealth);
+            simulatedHealth = Math.min(member.maxHealth, simulatedHealth + actualHeal);
+
+            // Track effective healing for HPS meter
+            if (actualHeal > 0 && hot.sourceId) {
+              hotHealEvents.push({ sourceId: hot.sourceId, effectiveHealing: actualHeal });
+            }
+
+            nextTickIn += hot.tickInterval;
+          }
+
+          // Check for bloom
+          if (remainingDuration <= 0 && hot.spellId === 'lifebloom' && hot.bloomHeal) {
+            const bloomAmount = hot.bloomHeal;
+            const missingHealth = member.maxHealth - simulatedHealth;
+            const actualHeal = Math.min(bloomAmount, missingHealth);
+
+            // Track bloom effective healing for HPS meter
+            if (actualHeal > 0 && hot.sourceId) {
+              hotHealEvents.push({ sourceId: hot.sourceId, effectiveHealing: actualHeal });
+            }
+          }
+        }
+      }
+
+      // Apply HoT heal tracking (runs exactly once per frame)
+      for (const event of hotHealEvents) {
+        healerEffectiveHealingRef.current = {
+          ...healerEffectiveHealingRef.current,
+          [event.sourceId]: (healerEffectiveHealingRef.current[event.sourceId] ?? 0) + event.effectiveHealing,
+        };
+      }
+
+      // Now apply the state update (callback may run multiple times in StrictMode, but healing is already tracked)
       setRaidMembers(prevMembers => {
         let hasActiveHoTs = false;
 
@@ -1901,6 +2003,10 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         const filtered = prev.filter(ft => now - ft.timestamp < 2000);
         return filtered.length === prev.length ? prev : filtered;
       });
+
+      // Sync HPS meter state from refs (update UI every frame for smooth display)
+      setEncounterElapsedTime(encounterElapsedTimeRef.current);
+      setHealerEffectiveHealing({ ...healerEffectiveHealingRef.current });
     };
 
     const intervalId = setInterval(gameLoop, TICK_RATE);
@@ -3025,11 +3131,12 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
         // Check if this is an NPC healer with an active cast
         const memberSpecId = (member as RaidMember & { specId?: string }).specId;
-        const isNpcHealerSpec = memberSpecId === 'shaman-restoration' || memberSpecId === 'paladin-holy';
+        const isNpcHealerSpec = memberSpecId === 'shaman-restoration' || memberSpecId === 'paladin-holy' || memberSpecId === 'priest-holy';
         const npcHealer = isNpcHealerSpec
           ? npcHealersRef.current.find(h => h.id === member.id)
           : null;
         const isNpcCasting = npcHealer?.currentCast != null;
+        const isHolyPriestOnGcd = memberSpecId === 'priest-holy' && npcHealer && npcHealer.gcdRemaining > 0;
 
         return (
           <div
@@ -3043,7 +3150,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             onClick={() => setTargetId(member.id)}
             title={member.name}
           >
-            {/* NPC Healer Cast Bar */}
+            {/* NPC Healer Cast Bar (for Shaman/Paladin with cast times) */}
             {isNpcCasting && npcHealer && npcHealer.currentCast && (() => {
               const cast = npcHealer.currentCast;
               const castTime = cast.chainHealResult?.castTime ?? cast.holyLightResult?.castTime ?? 0;
@@ -3060,6 +3167,29 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                       }}
                     />
                   </div>
+                </div>
+              );
+            })()}
+            {/* Holy Priest GCD Cooldown Icon */}
+            {isHolyPriestOnGcd && npcHealer && (() => {
+              // Calculate GCD progress (0 = just cast, 1 = GCD complete)
+              const gcdTotal = npcHealer.currentCast?.circleOfHealingResult?.gcd ?? 1.3;
+              const gcdProgress = 1 - (npcHealer.gcdRemaining / gcdTotal);
+              // Convert progress to degrees for clockwise sweep (0% = 360deg, 100% = 0deg)
+              const sweepDegrees = (1 - gcdProgress) * 360;
+              return (
+                <div className={styles.npcGcdIconContainer}>
+                  <img
+                    src="/icons/circle-of-healing.jpg"
+                    alt="Circle of Healing"
+                    className={styles.npcGcdIcon}
+                  />
+                  <div
+                    className={styles.npcGcdSweep}
+                    style={{
+                      background: `conic-gradient(transparent ${sweepDegrees}deg, rgba(0, 0, 0, 0.7) ${sweepDegrees}deg)`,
+                    }}
+                  />
                 </div>
               );
             })()}
@@ -3119,6 +3249,70 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               }}
             />
             <span className={styles.castBarText}>{casting.spellName}</span>
+          </div>
+        </div>
+      )}
+
+      {/* HPS Meter - Bottom Right Corner */}
+      {encounterActive && encounterElapsedTime > 0 && (
+        <div className={styles.hpsMeter}>
+          <div className={styles.hpsMeterHeader}>
+            <span>HPS Meter</span>
+            <span className={styles.hpsMeterTime}>
+              {Math.floor(encounterElapsedTime / 60)}:{String(Math.floor(encounterElapsedTime % 60)).padStart(2, '0')}
+            </span>
+          </div>
+          <div className={styles.hpsMeterList}>
+            {(() => {
+              // Calculate HPS for each healer and sort by HPS descending
+              const healerEntries = Object.entries(healerEffectiveHealing)
+                .map(([healerId, totalHealing]) => {
+                  const hps = encounterElapsedTime > 0 ? totalHealing / encounterElapsedTime : 0;
+                  // Get healer name and class color
+                  let name = healerId === 'player' ? 'You' : healerId;
+                  let classColor = '#888';
+
+                  if (healerId === 'player') {
+                    classColor = CLASS_INFO.druid?.color ?? '#ff7d0a';
+                  } else {
+                    // Find the raid member for NPC healers
+                    const raidIndex = parseInt(healerId.replace('raid-', ''), 10);
+                    if (!isNaN(raidIndex) && raidIndex < raidComposition.slots.length) {
+                      const slot = raidComposition.slots[raidIndex];
+                      const spec = getSpec(slot.specId);
+                      if (spec) {
+                        name = slot.name || spec.name;
+                        classColor = CLASS_INFO[spec.class]?.color ?? '#888';
+                      }
+                    }
+                  }
+
+                  return { healerId, name, hps, totalHealing, classColor };
+                })
+                .sort((a, b) => b.hps - a.hps);
+
+              // Find max HPS for bar width calculation
+              const maxHps = healerEntries.length > 0 ? healerEntries[0].hps : 1;
+
+              return healerEntries.map((entry, index) => (
+                <div key={entry.healerId} className={styles.hpsMeterRow}>
+                  <div
+                    className={styles.hpsMeterBar}
+                    style={{
+                      width: `${maxHps > 0 ? (entry.hps / maxHps) * 100 : 0}%`,
+                      backgroundColor: entry.classColor,
+                    }}
+                  />
+                  <span className={styles.hpsMeterRank}>{index + 1}.</span>
+                  <span className={styles.hpsMeterName} style={{ color: entry.classColor }}>
+                    {entry.name}
+                  </span>
+                  <span className={styles.hpsMeterValue}>
+                    {entry.hps >= 1000 ? `${(entry.hps / 1000).toFixed(1)}k` : Math.floor(entry.hps)}
+                  </span>
+                </div>
+              ));
+            })()}
           </div>
         </div>
       )}

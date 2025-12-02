@@ -52,7 +52,7 @@ function GearsetCard({ preset, isSelected, onSelect }: GearsetCardProps) {
 
       <div style={{ marginTop: '0.75rem' }}>
         <div className={styles.statRow}>
-          <span className={styles.statLabel}>Spell Power</span>
+          <span className={styles.statLabel}>Bonus Healing</span>
           <span className={styles.statValue}>{preset.stats.spellPower}</span>
         </div>
         <div className={styles.statRow}>

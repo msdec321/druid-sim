@@ -21,6 +21,17 @@ export const HOLY_PALADIN_STATS = {
   critChance: 0.32, // 32% crit chance
 } as const;
 
+// ============================================================================
+// Holy Priest Configuration
+// ============================================================================
+
+// Holy Priest stats
+// Haste rating of ~243 gives ~15.4% haste, reducing 1.5s GCD to ~1.3s
+export const HOLY_PRIEST_STATS = {
+  spellHasteRating: 243,
+  critChance: 0.14, // 14% crit chance
+} as const;
+
 // TBC haste rating to percent conversion at level 70
 const HASTE_RATING_CONVERSION = 15.77;
 
@@ -63,6 +74,21 @@ export const HOLY_LIGHT_DATA = {
   manaCost: 840,
   baseCastTime: 1.85, // seconds (after talents, typical Holy Paladin)
   critMultiplier: 2.0, // Crits heal for double
+} as const;
+
+// ============================================================================
+// Circle of Healing Spell Data
+// ============================================================================
+
+export const CIRCLE_OF_HEALING_DATA = {
+  // Rank 5 (max at level 70)
+  baseHealMin: 1000,
+  baseHealMax: 1600,
+  manaCost: 450,
+  castTime: 0, // Instant cast
+  baseGcd: 1.5, // Base GCD before haste
+  critMultiplier: 2.0, // Crits heal for double
+  maxTargets: 5, // Target + up to 4 group members
 } as const;
 
 // ============================================================================
@@ -351,6 +377,145 @@ export function applyHolyLight(
 }
 
 // ============================================================================
+// Circle of Healing Calculations
+// ============================================================================
+
+export interface CircleOfHealingTarget {
+  memberId: string;
+  healAmount: number;
+  isCrit: boolean;
+}
+
+export interface CircleOfHealingResult {
+  targets: CircleOfHealingTarget[];
+  gcd: number;
+  manaCost: number;
+}
+
+/**
+ * Get the group number for a raid member based on their index
+ * Groups are 0-4 in a 25-man raid (5 members per group)
+ */
+export function getGroupForMemberIndex(index: number): number {
+  return Math.floor(index / 5);
+}
+
+/**
+ * Get all members in the same group as the target
+ */
+export function getGroupMembers(
+  raidMembers: RaidMember[],
+  targetId: string
+): RaidMember[] {
+  const targetIndex = raidMembers.findIndex(m => m.id === targetId);
+  if (targetIndex === -1) return [];
+
+  const targetGroup = getGroupForMemberIndex(targetIndex);
+
+  return raidMembers.filter((_, index) => getGroupForMemberIndex(index) === targetGroup);
+}
+
+/**
+ * Roll base heal amount for Circle of Healing (random between min and max)
+ */
+function rollCircleOfHealingBaseHeal(): number {
+  return Math.floor(
+    Math.random() * (CIRCLE_OF_HEALING_DATA.baseHealMax - CIRCLE_OF_HEALING_DATA.baseHealMin + 1) +
+    CIRCLE_OF_HEALING_DATA.baseHealMin
+  );
+}
+
+/**
+ * Calculate Circle of Healing heal amount for a single target
+ * Each target gets an independent roll for base heal and crit
+ */
+export function calculateCircleOfHealingAmount(
+  critChance: number = HOLY_PRIEST_STATS.critChance
+): { healAmount: number; isCrit: boolean } {
+  const base = rollCircleOfHealingBaseHeal();
+
+  // Roll for crit (independent per target)
+  const isCrit = Math.random() < critChance;
+
+  // Apply crit multiplier if crit
+  const healAmount = isCrit
+    ? Math.floor(base * CIRCLE_OF_HEALING_DATA.critMultiplier)
+    : base;
+
+  return { healAmount, isCrit };
+}
+
+/**
+ * Calculate full Circle of Healing result for all group members
+ *
+ * Circle of Healing heals the target and all members in their group
+ * Each heal is rolled independently (1000-1600 base, 14% crit for double)
+ */
+export function calculateCircleOfHealing(
+  raidMembers: RaidMember[],
+  targetId: string,
+  hasteRating: number = HOLY_PRIEST_STATS.spellHasteRating,
+  critChance: number = HOLY_PRIEST_STATS.critChance
+): CircleOfHealingResult {
+  // Calculate haste-adjusted GCD
+  const hastePercent = calculateSpellHaste(hasteRating);
+  const gcd = calculateCastTimeWithHaste(CIRCLE_OF_HEALING_DATA.baseGcd, hastePercent);
+
+  // Get all group members (alive and damaged)
+  const groupMembers = getGroupMembers(raidMembers, targetId)
+    .filter(m => !m.isDead);
+
+  // Calculate heal amounts for each target (each roll is independent)
+  const targets: CircleOfHealingTarget[] = groupMembers.map(member => {
+    const { healAmount, isCrit } = calculateCircleOfHealingAmount(critChance);
+    return {
+      memberId: member.id,
+      healAmount,
+      isCrit,
+    };
+  });
+
+  return {
+    targets,
+    gcd,
+    manaCost: CIRCLE_OF_HEALING_DATA.manaCost,
+  };
+}
+
+/**
+ * Apply Circle of Healing to raid members
+ * Mutates the raid members' health values
+ *
+ * @returns Array of heal events for floating combat text
+ */
+export function applyCircleOfHealing(
+  raidMembers: RaidMember[],
+  cohResult: CircleOfHealingResult
+): Array<{ targetId: string; amount: number; overheal: number; isCrit: boolean }> {
+  const healEvents: Array<{ targetId: string; amount: number; overheal: number; isCrit: boolean }> = [];
+
+  for (const target of cohResult.targets) {
+    const member = raidMembers.find(m => m.id === target.memberId);
+    if (!member || member.isDead) continue;
+
+    const missingHealth = member.maxHealth - member.currentHealth;
+    const actualHeal = Math.min(target.healAmount, missingHealth);
+    const overheal = target.healAmount - actualHeal;
+
+    member.currentHealth = Math.min(member.maxHealth, member.currentHealth + actualHeal);
+
+    healEvents.push({
+      targetId: member.id,
+      amount: target.healAmount,
+      overheal,
+      isCrit: target.isCrit,
+    });
+  }
+
+  return healEvents;
+}
+
+// ============================================================================
 // NPC Healer AI
 // ============================================================================
 
@@ -363,6 +528,7 @@ export interface NPCHealerState {
     targetId: string;
     chainHealResult?: ChainHealResult;
     holyLightResult?: HolyLightResult;
+    circleOfHealingResult?: CircleOfHealingResult;
   } | null;
   gcdRemaining: number;
   /** Initial delay before the healer starts casting (0-2 seconds) */
@@ -428,6 +594,25 @@ export function createHolyPaladinState(id: string): NPCHealerState {
   return {
     id,
     specId: 'paladin-holy',
+    castTimeRemaining: 0,
+    currentCast: null,
+    gcdRemaining: 0,
+    initialDelay,
+    reactionDelay: 0,
+  };
+}
+
+/**
+ * Initialize NPC healer state for a holy priest
+ * Includes a random initial delay (0-2s) before they start casting
+ */
+export function createHolyPriestState(id: string): NPCHealerState {
+  // Random initial delay so priests don't all start casting at the same time
+  const initialDelay = Math.random() * (INITIAL_DELAY_MAX - INITIAL_DELAY_MIN) + INITIAL_DELAY_MIN;
+
+  return {
+    id,
+    specId: 'priest-holy',
     castTimeRemaining: 0,
     currentCast: null,
     gcdRemaining: 0,
@@ -577,6 +762,91 @@ export function shouldCastHolyLight(
   return anyoneNeedsHealing;
 }
 
+// ============================================================================
+// Holy Priest AI
+// ============================================================================
+
+/**
+ * Find the best Circle of Healing target based on group health deficits
+ *
+ * Circle of Healing heals the target and all members in their group,
+ * so we want to find a member whose group has the most total health deficit.
+ *
+ * @param raidMembers - All raid members
+ * @returns Target ID (member of the most damaged group) or null if no one needs healing
+ */
+export function findBestCircleOfHealingTarget(raidMembers: RaidMember[]): string | null {
+  const aliveMembers = raidMembers.filter(m => !m.isDead);
+  if (aliveMembers.length === 0) return null;
+
+  // Calculate total health deficit for each group (0-4)
+  const groupDeficits: { group: number; totalDeficit: number; memberCount: number }[] = [];
+
+  for (let group = 0; group < 5; group++) {
+    const groupMembers = aliveMembers.filter((_, index) => {
+      const originalIndex = raidMembers.findIndex(m => m.id === aliveMembers[index].id);
+      return getGroupForMemberIndex(originalIndex) === group;
+    });
+
+    const totalDeficit = groupMembers.reduce(
+      (sum, m) => sum + (m.maxHealth - m.currentHealth),
+      0
+    );
+
+    if (totalDeficit > 0) {
+      groupDeficits.push({
+        group,
+        totalDeficit,
+        memberCount: groupMembers.length,
+      });
+    }
+  }
+
+  if (groupDeficits.length === 0) return null;
+
+  // Sort by total deficit (most damaged group first)
+  groupDeficits.sort((a, b) => b.totalDeficit - a.totalDeficit);
+
+  const bestGroup = groupDeficits[0].group;
+
+  // Find a damaged member in the best group to target
+  // Prefer the most damaged member in that group
+  const bestGroupMembers = raidMembers
+    .map((m, index) => ({ member: m, index }))
+    .filter(({ member, index }) =>
+      !member.isDead &&
+      getGroupForMemberIndex(index) === bestGroup &&
+      member.currentHealth < member.maxHealth
+    )
+    .sort((a, b) =>
+      (a.member.currentHealth / a.member.maxHealth) -
+      (b.member.currentHealth / b.member.maxHealth)
+    );
+
+  return bestGroupMembers.length > 0 ? bestGroupMembers[0].member.id : null;
+}
+
+/**
+ * Decide if the priest should cast Circle of Healing
+ * Simple AI: cast if anyone is below 80% health and we're not on GCD
+ */
+export function shouldCastCircleOfHealing(
+  raidMembers: RaidMember[],
+  healerState: NPCHealerState
+): boolean {
+  // Can't cast if on GCD (Circle of Healing is instant, so no cast time check)
+  if (healerState.gcdRemaining > 0) {
+    return false;
+  }
+
+  // Check if anyone needs healing (below 80% health)
+  const needsHealing = raidMembers.some(
+    m => !m.isDead && m.currentHealth / m.maxHealth < 0.80
+  );
+
+  return needsHealing;
+}
+
 /**
  * Update NPC healer state for one tick
  * Returns heal events and chain heal visual data if a cast completed
@@ -655,8 +925,34 @@ export function updateNPCHealer(
         }
       }
 
-      // Start GCD (cast time > GCD for both spells, so no additional GCD needed)
-      healerState.gcdRemaining = 0;
+      // Apply Circle of Healing (Holy Priest)
+      if (healerState.currentCast.circleOfHealingResult) {
+        const events = applyCircleOfHealing(raidMembers, healerState.currentCast.circleOfHealingResult);
+        for (const event of events) {
+          healEvents.push({
+            targetId: event.targetId,
+            amount: event.amount,
+            overheal: event.overheal,
+          });
+        }
+
+        // Log the heal
+        const targetNames = healerState.currentCast.circleOfHealingResult.targets
+          .map(t => {
+            const name = raidMembers.find(m => m.id === t.memberId)?.name || 'Unknown';
+            return t.isCrit ? `${name}*` : name;
+          })
+          .join(', ');
+        console.log(`[NPC Priest] Circle of Healing healed: ${targetNames}`);
+
+        // Circle of Healing is instant cast, so GCD starts now
+        healerState.gcdRemaining = healerState.currentCast.circleOfHealingResult.gcd;
+      }
+
+      // Start GCD (cast time > GCD for Shaman/Paladin spells, so no additional GCD needed for them)
+      if (!healerState.currentCast.circleOfHealingResult) {
+        healerState.gcdRemaining = 0;
+      }
       healerState.currentCast = null;
       healerState.castTimeRemaining = 0;
 
@@ -705,6 +1001,30 @@ export function updateNPCHealer(
 
           const targetName = raidMembers.find(m => m.id === targetId)?.name || 'Unknown';
           console.log(`[NPC Paladin] Casting Holy Light on ${targetName} (${holyLightResult.castTime.toFixed(2)}s cast)`);
+        }
+      }
+    }
+
+    // Holy Priest AI
+    if (healerState.specId === 'priest-holy') {
+      if (shouldCastCircleOfHealing(raidMembers, healerState)) {
+        const targetId = findBestCircleOfHealingTarget(raidMembers);
+
+        if (targetId) {
+          const circleOfHealingResult = calculateCircleOfHealing(raidMembers, targetId);
+
+          healerState.currentCast = {
+            spellId: 'circle-of-healing',
+            targetId,
+            circleOfHealingResult,
+          };
+          // Circle of Healing is instant cast, set a tiny cast time so it completes next frame
+          healerState.castTimeRemaining = 0.001;
+
+          const groupMembers = circleOfHealingResult.targets
+            .map(t => raidMembers.find(m => m.id === t.memberId)?.name || 'Unknown')
+            .join(', ');
+          console.log(`[NPC Priest] Casting Circle of Healing on group: ${groupMembers}`);
         }
       }
     }

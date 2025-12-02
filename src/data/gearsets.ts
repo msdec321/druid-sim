@@ -5,7 +5,7 @@ import type { GearPreset } from '../types';
 export const GEAR_PRESETS: GearPreset[] = [
   {
     id: 'pre-raid',
-    name: 'Pre-Raid BiS',
+    name: 'Pre-Raid',
     description: 'Best-in-slot gear from heroic dungeons and crafting',
     tier: 'pre-raid',
     stats: {

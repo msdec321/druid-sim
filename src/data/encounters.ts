@@ -128,7 +128,7 @@ export const BRUTALLUS: Encounter = {
   description: 'A brutal pit lord with heavy tank damage and raid-wide burns.',
   difficulty: 'hard',
   duration: 300, // 5 minutes
-  bossHealth: 2500000, // 2.5 million HP
+  bossHealth: 4000000, // 4 million HP
   tankCount: 2,  // Brutallus requires 2 tanks for Meteor Slash
   tankPositions: [
     { angle: 0, radius: 60 },              // Tank 1: right side of boss
