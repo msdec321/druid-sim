@@ -123,10 +123,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   const restoreManaOnBuffRef = useRef(false); // Flag to restore mana to full after buffing
 
   // Boss auto attack timer (seconds until next attack)
-  const bossAutoAttackTimerRef = useRef<number>(2.0);
-  const BOSS_AUTO_ATTACK_INTERVAL = 2.0; // seconds
-  const BOSS_AUTO_ATTACK_MIN = 4500;
-  const BOSS_AUTO_ATTACK_MAX = 6000;
+  const bossAutoAttackTimerRef = useRef<number>(1.2);
+  const BOSS_AUTO_ATTACK_INTERVAL_MIN = 1.1; // seconds
+  const BOSS_AUTO_ATTACK_INTERVAL_MAX = 1.3; // seconds
+  // Brutallus dual-wields - main-hand and off-hand attack simultaneously
+  const BOSS_MAIN_HAND_DAMAGE_MIN = 2275;
+  const BOSS_MAIN_HAND_DAMAGE_MAX = 9685;
+  const BOSS_OFF_HAND_DAMAGE_MIN = 1277;
+  const BOSS_OFF_HAND_DAMAGE_MAX = 4714;
 
   // Boss raid damage timer (random target damage)
   const bossRaidDamageTimerRef = useRef<number>(4.0);
@@ -146,6 +150,9 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
   // Victory state
   const [encounterVictory, setEncounterVictory] = useState(false);
+
+  // Defeat state
+  const [encounterDefeat, setEncounterDefeat] = useState(false);
 
   // HPS Meter state - track encounter time and effective healing per healer
   const [encounterElapsedTime, setEncounterElapsedTime] = useState(0);
@@ -216,6 +223,38 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     return macros.find(m => m.id === macroId);
   };
 
+  // Find a new aggro target when current target dies
+  // Priority: tanks > dps > healers
+  const findNewAggroTarget = (
+    members: RaidMember[],
+    currentTargetIds: string[]
+  ): string | null => {
+    // Get alive members not already targeted
+    const availableMembers = members.filter(
+      m => !m.isDead && !currentTargetIds.includes(m.id)
+    );
+
+    if (availableMembers.length === 0) return null;
+
+    // Priority order: tanks, then dps, then healers
+    const priorityOrder: Array<'tank' | 'dps' | 'healer'> = ['tank', 'dps', 'healer'];
+
+    for (const role of priorityOrder) {
+      const candidates = availableMembers.filter(m => m.role === role);
+      if (candidates.length > 0) {
+        // Return the first available candidate of this role
+        return candidates[0].id;
+      }
+    }
+
+    return null;
+  };
+
+  // Check if all raid members are dead (wipe)
+  const checkForWipe = (members: RaidMember[]): boolean => {
+    return members.every(m => m.isDead);
+  };
+
   // Create raid members from composition
   const createRaidFromComposition = (composition: RaidComposition): RaidMember[] => {
     return composition.slots.map((slot, index) => {
@@ -225,7 +264,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
       // Health based on role
       let maxHealth = 10000;
-      if (spec?.role === 'tank') maxHealth = 18000;
+      if (spec?.role === 'tank') maxHealth = 22000;
 
       return {
         id: `raid-${index}`,
@@ -1192,20 +1231,21 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         bossAutoAttackTimerRef.current -= deltaSeconds;
 
         if (bossAutoAttackTimerRef.current <= 0) {
-          // Reset timer
-          bossAutoAttackTimerRef.current = BOSS_AUTO_ATTACK_INTERVAL;
+          // Reset timer with random interval between 1.1 and 1.3 seconds
+          bossAutoAttackTimerRef.current =
+            Math.random() * (BOSS_AUTO_ATTACK_INTERVAL_MAX - BOSS_AUTO_ATTACK_INTERVAL_MIN) + BOSS_AUTO_ATTACK_INTERVAL_MIN;
 
-          // Each boss attacks its assigned tank
+          // Each boss attacks its assigned tank with dual-wield (main-hand + off-hand)
           const targetIds = bossTargetIdsRef.current;
           setRaidMembers(prevMembers => {
-            return prevMembers.map(member => {
+            const deadTargetIds: string[] = [];
+
+            const updatedMembers = prevMembers.map(member => {
               // Check if this member is a target of any boss
               if (!targetIds.includes(member.id)) return member;
 
-              // Calculate random base damage between min and max (per boss attack)
-              const baseDamage = Math.floor(
-                Math.random() * (BOSS_AUTO_ATTACK_MAX - BOSS_AUTO_ATTACK_MIN + 1) + BOSS_AUTO_ATTACK_MIN
-              );
+              // Skip if already dead
+              if (member.isDead) return member;
 
               // Check if target has avoidance stats (tanks)
               const memberWithSpec = member as RaidMember & { specId?: string };
@@ -1213,28 +1253,89 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 ? getAvoidanceStats(memberWithSpec.specId)
                 : null;
 
-              let finalDamage = baseDamage;
-              let logMessage: string;
+              // Main-hand attack
+              const mainHandDamage = Math.floor(
+                Math.random() * (BOSS_MAIN_HAND_DAMAGE_MAX - BOSS_MAIN_HAND_DAMAGE_MIN + 1) + BOSS_MAIN_HAND_DAMAGE_MIN
+              );
+              let mainHandFinalDamage = mainHandDamage;
+              let mainHandLog: string;
 
               if (avoidance) {
-                // Roll on combat table for tanks
-                const attackResult = rollCombatTable(baseDamage, avoidance);
-                finalDamage = attackResult.damageDealt;
-                logMessage = formatAttackResult('Boss', member.name, baseDamage, attackResult);
+                const mainHandResult = rollCombatTable(mainHandDamage, avoidance);
+                mainHandFinalDamage = mainHandResult.damageDealt;
+                mainHandLog = formatAttackResult('Boss MH', member.name, mainHandDamage, mainHandResult);
               } else {
-                // Non-tanks take full damage
-                logMessage = `Boss hits ${member.name} for ${baseDamage} damage`;
+                mainHandLog = `Boss MH hits ${member.name} for ${mainHandDamage} damage`;
               }
 
-              const newHealth = Math.max(0, member.currentHealth - finalDamage);
-              console.log(`${logMessage} (${newHealth}/${member.maxHealth})`);
+              // Off-hand attack (separate avoidance roll)
+              const offHandDamage = Math.floor(
+                Math.random() * (BOSS_OFF_HAND_DAMAGE_MAX - BOSS_OFF_HAND_DAMAGE_MIN + 1) + BOSS_OFF_HAND_DAMAGE_MIN
+              );
+              let offHandFinalDamage = offHandDamage;
+              let offHandLog: string;
+
+              if (avoidance) {
+                const offHandResult = rollCombatTable(offHandDamage, avoidance);
+                offHandFinalDamage = offHandResult.damageDealt;
+                offHandLog = formatAttackResult('Boss OH', member.name, offHandDamage, offHandResult);
+              } else {
+                offHandLog = `Boss OH hits ${member.name} for ${offHandDamage} damage`;
+              }
+
+              // Apply total damage from both weapons
+              const totalDamage = mainHandFinalDamage + offHandFinalDamage;
+              const newHealth = Math.max(0, member.currentHealth - totalDamage);
+              const willDie = newHealth <= 0;
+              console.log(`${mainHandLog} | ${offHandLog} (${newHealth}/${member.maxHealth})`);
+
+              // Track if this target died
+              if (willDie) {
+                deadTargetIds.push(member.id);
+                console.log(`${member.name} has died!`);
+              }
 
               return {
                 ...member,
                 currentHealth: newHealth,
-                isDead: newHealth <= 0,
+                isDead: willDie,
               };
             });
+
+            // Handle aggro switching for dead targets
+            if (deadTargetIds.length > 0) {
+              const newTargetIds = [...targetIds];
+
+              for (const deadId of deadTargetIds) {
+                const deadIndex = newTargetIds.indexOf(deadId);
+                if (deadIndex !== -1) {
+                  // Find a new target, excluding current targets
+                  const newTarget = findNewAggroTarget(updatedMembers, newTargetIds);
+
+                  if (newTarget) {
+                    const newTargetMember = updatedMembers.find(m => m.id === newTarget);
+                    console.log(`Boss switches aggro to ${newTargetMember?.name}`);
+                    newTargetIds[deadIndex] = newTarget;
+                  } else {
+                    // No valid targets left, remove this boss target slot
+                    newTargetIds.splice(deadIndex, 1);
+                  }
+                }
+              }
+
+              // Update boss targets
+              setBossTargetIds(newTargetIds);
+              bossTargetIdsRef.current = newTargetIds;
+            }
+
+            // Check for total wipe
+            if (checkForWipe(updatedMembers)) {
+              console.log('DEFEAT! All raid members have died!');
+              setEncounterDefeat(true);
+              setEncounterActive(false);
+            }
+
+            return updatedMembers;
           });
         }
       }
@@ -1261,7 +1362,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
             console.log(`Boss raid damage hits: ${targets.map(t => t.name).join(', ')} for ${randomTargetConfig.damage} each`);
 
-            return prevMembers.map(member => {
+            const updatedMembers = prevMembers.map(member => {
               if (!targetIds.has(member.id)) return member;
 
               const newHealth = Math.max(0, member.currentHealth - randomTargetConfig.damage);
@@ -1272,6 +1373,15 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 isDead: newHealth <= 0,
               };
             });
+
+            // Check for wipe after random damage
+            if (checkForWipe(updatedMembers)) {
+              console.log('DEFEAT! All raid members have died!');
+              setEncounterDefeat(true);
+              setEncounterActive(false);
+            }
+
+            return updatedMembers;
           });
         }
       }
@@ -1491,7 +1601,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             console.log(`Meteor Slash hits ${affectedCount} targets for ${splitDamage} each (${baseDamage} total)`);
 
             // Apply damage and debuff to affected members
-            return prevMembers.map(member => {
+            const updatedMembers = prevMembers.map(member => {
               if (!affectedIds.has(member.id)) return member;
 
               // Calculate damage modifier from existing debuff stacks
@@ -1557,6 +1667,15 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 debuffs: newDebuffs,
               };
             });
+
+            // Check for wipe after Meteor Slash damage
+            if (checkForWipe(updatedMembers)) {
+              console.log('DEFEAT! All raid members have died!');
+              setEncounterDefeat(true);
+              setEncounterActive(false);
+            }
+
+            return updatedMembers;
           });
         }
       }
@@ -1685,6 +1804,13 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               debuffs: updatedDebuffs,
             };
           });
+
+          // Check for wipe after burn damage
+          if (membersChanged && checkForWipe(updatedMembers)) {
+            console.log('DEFEAT! All raid members have died!');
+            setEncounterDefeat(true);
+            setEncounterActive(false);
+          }
 
           return membersChanged ? updatedMembers : prevMembers;
         });
@@ -2178,6 +2304,19 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             <h1 className={styles.victoryTitle}>Victory!</h1>
             <p className={styles.victoryText}>{encounter.name} has been defeated!</p>
             <button className={styles.victoryButton} onClick={onExit}>
+              Return to Menu
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Defeat Overlay */}
+      {encounterDefeat && (
+        <div className={styles.defeatOverlay}>
+          <div className={styles.defeatModal}>
+            <h1 className={styles.defeatTitle}>Defeat</h1>
+            <p className={styles.defeatText}>Your raid has been wiped!</p>
+            <button className={styles.defeatButton} onClick={onExit}>
               Return to Menu
             </button>
           </div>
