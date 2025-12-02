@@ -1,7 +1,7 @@
 /* Encounter Screen Layout */
 .encounterScreen {
   min-height: 100vh;
-  background-color: #1a1a2e;
+  background-color: #262626;
   color: #eaeaea;
   display: flex;
   flex-direction: column;
@@ -184,7 +184,7 @@
 .bossHealthBar {
   position: relative;
   height: 24px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   border: 1px solid #3d3d5c;
   border-radius: 4px;
   overflow: hidden;
@@ -219,7 +219,7 @@
 .raidSquare {
   width: 65px;
   height: 65px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   border: 2px solid var(--class-color, #3d3d5c);
   border-radius: 4px;
   cursor: pointer;
@@ -650,7 +650,7 @@
 .manaBar {
   width: 250px;
   height: 20px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   border: 2px solid #3d3d5c;
   border-radius: 4px;
   position: relative;
@@ -687,7 +687,7 @@
 .castBar {
   width: 250px;
   height: 24px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   border: 2px solid #3d3d5c;
   border-radius: 4px;
   position: relative;
@@ -725,7 +725,7 @@
 .npcCastBar {
   width: 60px;
   height: 10px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   border: 1px solid #3d3d5c;
   border-radius: 2px;
   position: relative;
@@ -768,7 +768,7 @@
   position: relative;
   border: 2px solid #7ec8e3;
   border-radius: 4px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   box-shadow: 0 0 8px rgba(126, 200, 227, 0.4);
 }
 
@@ -778,7 +778,7 @@
   position: relative;
   border: 2px solid #7ec8e3;
   border-radius: 4px;
-  background-color: #1a1a2e;
+  background-color: #262626;
   box-shadow: 0 0 8px rgba(126, 200, 227, 0.4);
 }
 

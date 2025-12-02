@@ -1,0 +1,60 @@
+.menuContainer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10;
+}
+
+.orbitingIcon {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 8px;
+  animation: orbit 16s linear infinite;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.orbitingIcon2 {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 8px;
+  animation: orbit 16s linear infinite;
+  animation-delay: -5.33s;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.orbitingIcon3 {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 8px;
+  animation: orbit 16s linear infinite;
+  animation-delay: -10.67s;
+  pointer-events: none;
+  z-index: 5;
+}
+
+@keyframes orbit {
+  from {
+    transform: rotate(0deg) translateX(350px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(350px) rotate(-360deg);
+  }
+}

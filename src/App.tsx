@@ -37,13 +37,19 @@ function App() {
   const [subtletyHovered, setSubtletyHovered] = useState(false);
   const [omenPoints, setOmenPoints] = useState(0);
   const [omenHovered, setOmenHovered] = useState(false);
+  const [tranquilSpiritPoints, setTranquilSpiritPoints] = useState(0);
+  const [tranquilSpiritHovered, setTranquilSpiritHovered] = useState(false);
+  const [improvedRejuvenationPoints, setImprovedRejuvenationPoints] = useState(0);
+  const [improvedRejuvenationHovered, setImprovedRejuvenationHovered] = useState(false);
   const saveDataHook = useSaveData();
 
   // Calculate total points spent in the tree for prerequisite checks
   const row1Points = talentPoints + furorPoints;
   const row2Points = naturalistPoints + naturesFocusPoints + naturalShapeshifterPoints;
+  const row3Points = intensityPoints + subtletyPoints + omenPoints;
   const row2Unlocked = row1Points >= 5;
   const row3Unlocked = row1Points + row2Points >= 10;
+  const row4Unlocked = row1Points + row2Points + row3Points >= 15;
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -193,7 +199,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '80px',
+                  top: '70px',
                   left: '730px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
@@ -245,7 +251,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '80px',
+                  top: '70px',
                   left: '800px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
@@ -297,7 +303,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '80px',
+                  top: '70px',
                   left: '875px',
                   cursor: row2Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row2Unlocked ? 1 : 0.5,
@@ -349,7 +355,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '150px',
+                  top: '130px',
                   left: '730px',
                   cursor: row3Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row3Unlocked ? 1 : 0.5,
@@ -401,7 +407,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '150px',
+                  top: '130px',
                   left: '800px',
                   cursor: row3Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row3Unlocked ? 1 : 0.5,
@@ -453,7 +459,7 @@ function App() {
               <div
                 style={{
                   position: 'absolute',
-                  top: '150px',
+                  top: '130px',
                   left: '875px',
                   cursor: row3Unlocked ? 'pointer' : 'not-allowed',
                   opacity: row3Unlocked ? 1 : 0.5,
@@ -490,6 +496,110 @@ function App() {
                   <img
                     src="/tooltips/talents/omen-of-clarity.png"
                     alt="Omen of Clarity tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '190px',
+                  left: '800px',
+                  cursor: row4Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row4Unlocked ? 1 : 0.5,
+                  zIndex: tranquilSpiritHovered ? 100 : 1,
+                }}
+                onClick={() => row4Unlocked && setTranquilSpiritPoints(p => Math.min(p + 1, 5))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setTranquilSpiritPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setTranquilSpiritHovered(true)}
+                onMouseLeave={() => setTranquilSpiritHovered(false)}
+              >
+                <img
+                  src="/icons/talents/tranquil-spirit.jpg"
+                  alt="Tranquil Spirit"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row4Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row4Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{tranquilSpiritPoints}/5</span>
+                {tranquilSpiritHovered && (
+                  <img
+                    src={`/tooltips/talents/tranquil-spirit_${tranquilSpiritPoints}.png`}
+                    alt="Tranquil Spirit tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '190px',
+                  left: '875px',
+                  cursor: row4Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row4Unlocked ? 1 : 0.5,
+                  zIndex: improvedRejuvenationHovered ? 100 : 1,
+                }}
+                onClick={() => row4Unlocked && setImprovedRejuvenationPoints(p => Math.min(p + 1, 3))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setImprovedRejuvenationPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setImprovedRejuvenationHovered(true)}
+                onMouseLeave={() => setImprovedRejuvenationHovered(false)}
+              >
+                <img
+                  src="/icons/talents/improved-rejuvenation.jpg"
+                  alt="Improved Rejuvenation"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row4Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row4Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{improvedRejuvenationPoints}/3</span>
+                {improvedRejuvenationHovered && (
+                  <img
+                    src={`/tooltips/talents/improved-rejuvenation_${improvedRejuvenationPoints}.png`}
+                    alt="Improved Rejuvenation tooltip"
                     style={{
                       position: 'absolute',
                       top: '50px',

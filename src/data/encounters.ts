@@ -243,6 +243,22 @@ export const EREDAR_TWINS: Encounter = {
         },
       },
     },
+    {
+      name: 'Phase 2',
+      duration: null,
+      damagePattern: {
+        tankDPS: 2800,
+        raidDamage: {
+          damage: 1800,
+          interval: 5,
+        },
+        randomTargetDamage: {
+          damage: 3500,
+          interval: 3,
+          targetCount: 4,
+        },
+      },
+    },
   ],
 };
 
@@ -256,6 +272,22 @@ export const MURU: Encounter = {
   phases: [
     {
       name: 'Phase 1',
+      duration: null,
+      damagePattern: {
+        tankDPS: 3200,
+        raidDamage: {
+          damage: 2800,
+          interval: 5,
+        },
+        randomTargetDamage: {
+          damage: 4800,
+          interval: 3,
+          targetCount: 5,
+        },
+      },
+    },
+    {
+      name: 'Phase 2',
       duration: null,
       damagePattern: {
         tankDPS: 3200,
