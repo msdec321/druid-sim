@@ -12,11 +12,11 @@ Example gameplay:
 
 ## Encounters
 
-Face off against configurable raid encounters with realistic damage patterns. The simulator features tank damage, raid-wide AoE, and random target mechanics.   
-Currently contains three "training dummy" encounters (single tank, two tank, and three tank). The plan will be to have simulated encounters of each boss in Sunwell Plateau (Kalecgos through Kil'jaeden), and perhaps more.  
-Currently Resto Shamans will cast Chain Heal on the raid. TODO: Will add functionality to allow Holy Paladins and Priests to heal as well.  
-Raid-frames are based on a standard GRID2 layout. I don't particularly plan on adding templates for other raidframe addons.  
-TODO: Add mouseover casting support  
+The simulation will feature standalone encounters of each boss in Sunwell Plateau (Kalecgos through Kil'jaeden), and perhaps more. Currently implemented is a Brutallus encounter along with a few target dummy encounters. Raid-frames are based on a standard GRID2 layout. I don't particularly plan on adding templates for other raidframe addons. TODO: Add mouseover casting support  
+
+Below is a description of how each boss' abilities and damage profiles have been implemented.
+
+### Brutallus
 
 ## Gearsets
 
@@ -49,3 +49,5 @@ All configurations are saved to your browser's local storage and persist between
 Configure your 25-man raid with any combination of TBC classes and specializations. The raid composition affects how damage is distributed and how NPC healers prioritize their targets.  
 Players can left-click on a grid space to select classes. Right-click on a player to optionally set their name (can be useful for macros). Tanks will hold aggro on bosses. DPS classes don't currently matter, and each DPS player in your raid will do ~500 DPS on average.  
 Resto Shamans will help heal the raid with Chain Heal. I am planning to add support for Paladins and Priest bots to also help heal the raid and tanks, respectively. TODO: Add support for shadow priests (ie having a Spriest in your party will increase your mana regen)  
+
+Currently Resto Shamans will cast Chain Heal on the raid. TODO: Will add functionality to allow Holy Paladins and Priests to heal as well.  
