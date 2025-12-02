@@ -18,13 +18,13 @@ Below is a description of how each boss' abilities and damage profiles have been
 
 ### Brutallus
 
-Brutallus is a 5-minute encounter (4M HP) featuring heavy tank damage and raid-wide burns.
+Duration: 5 minutes
 
 | Ability | Details |
 |---------|---------|
 | **Melee Attacks** | Dual-wield attack every 1.1-1.3s. Main-hand: 2,275-9,685 damage. Off-hand: 1,277-4,714 damage. Each weapon rolls avoidance separately. |
 | **Meteor Slash** | Every 10s. 20,000 fire damage split between tank and players in cone behind. Applies debuff (40s duration) increasing fire damage taken by 75% per stack. |
-| **Burn** | Every 20s on random player. Lasts 60s. Ticks for 100 DPS initially, doubling every 10s (100→200→400→800→1600→3200). Amplified by Meteor Slash stacks. |
+| **Burn** | Every 20s on random player. Lasts 60s. Ticks for 100 DPS initially, doubling every 10s (100→200→400→800→1600→3200). Amplified by Meteor Slash stacks. Burn does NOT spread upon touching other players in the sim |
 
 Burned players automatically move out of Meteor Slash soak groups to avoid gaining stacks.
 
