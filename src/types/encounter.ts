@@ -78,6 +78,15 @@ export interface BurnConfig {
   escalationInterval: number; // how often damage doubles (10s)
 }
 
+// Stomp configuration (Brutallus)
+export interface StompConfig {
+  damage: number;           // damage dealt (5000)
+  interval: number;         // seconds between stomps (30s)
+  initialDelay: number;     // seconds before first stomp (30s)
+  debuffDuration: number;   // how long the debuff lasts (10s)
+  debuffModifier: number;   // damage increase while debuffed (0.30 = 30%)
+}
+
 // Damage pattern within a phase
 export interface DamagePattern {
   // Constant damage per second to tanks
@@ -97,6 +106,8 @@ export interface DamagePattern {
   meteorSlash?: MeteorSlashConfig;
   // Burn - DoT applied to random players, damage doubles every 10s
   burn?: BurnConfig;
+  // Stomp - damage + debuff that increases damage taken
+  stomp?: StompConfig;
   // Scheduled events at specific times
   scheduledEvents?: Array<{
     time: number;         // seconds into phase

@@ -41,15 +41,23 @@ function App() {
   const [tranquilSpiritHovered, setTranquilSpiritHovered] = useState(false);
   const [improvedRejuvenationPoints, setImprovedRejuvenationPoints] = useState(0);
   const [improvedRejuvenationHovered, setImprovedRejuvenationHovered] = useState(false);
+  const [naturesSwiftnessPoints, setNaturesSwiftnessPoints] = useState(0);
+  const [naturesSwiftnessHovered, setNaturesSwiftnessHovered] = useState(false);
+  const [giftOfNaturePoints, setGiftOfNaturePoints] = useState(0);
+  const [giftOfNatureHovered, setGiftOfNatureHovered] = useState(false);
+  const [improvedTranquilityPoints, setImprovedTranquilityPoints] = useState(0);
+  const [improvedTranquilityHovered, setImprovedTranquilityHovered] = useState(false);
   const saveDataHook = useSaveData();
 
   // Calculate total points spent in the tree for prerequisite checks
   const row1Points = talentPoints + furorPoints;
   const row2Points = naturalistPoints + naturesFocusPoints + naturalShapeshifterPoints;
   const row3Points = intensityPoints + subtletyPoints + omenPoints;
+  const row4Points = tranquilSpiritPoints + improvedRejuvenationPoints;
   const row2Unlocked = row1Points >= 5;
   const row3Unlocked = row1Points + row2Points >= 10;
   const row4Unlocked = row1Points + row2Points + row3Points >= 15;
+  const row5Unlocked = row1Points + row2Points + row3Points + row4Points >= 20;
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -600,6 +608,186 @@ function App() {
                   <img
                     src={`/tooltips/talents/improved-rejuvenation_${improvedRejuvenationPoints}.png`}
                     alt="Improved Rejuvenation tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              {/* Arrow from Intensity to Nature's Swiftness */}
+              <svg
+                style={{
+                  position: 'absolute',
+                  top: '175px',
+                  left: '743px',
+                  pointerEvents: 'none',
+                }}
+                width="14"
+                height="75"
+              >
+                <line
+                  x1="7"
+                  y1="0"
+                  x2="7"
+                  y2="65"
+                  stroke="#888"
+                  strokeWidth="3"
+                />
+                <polygon
+                  points="0,65 7,75 14,65"
+                  fill="#888"
+                />
+              </svg>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '250px',
+                  left: '730px',
+                  cursor: row5Unlocked && intensityPoints >= 3 ? 'pointer' : 'not-allowed',
+                  opacity: row5Unlocked && intensityPoints >= 3 ? 1 : 0.5,
+                  zIndex: naturesSwiftnessHovered ? 100 : 1,
+                }}
+                onClick={() => row5Unlocked && intensityPoints >= 3 && setNaturesSwiftnessPoints(p => Math.min(p + 1, 1))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setNaturesSwiftnessPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setNaturesSwiftnessHovered(true)}
+                onMouseLeave={() => setNaturesSwiftnessHovered(false)}
+              >
+                <img
+                  src="/icons/talents/natures-swiftness.jpg"
+                  alt="Nature's Swiftness"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row5Unlocked && intensityPoints >= 3 ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row5Unlocked && intensityPoints >= 3 ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{naturesSwiftnessPoints}/1</span>
+                {naturesSwiftnessHovered && (
+                  <img
+                    src="/tooltips/talents/natures-swiftness.png"
+                    alt="Nature's Swiftness tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '250px',
+                  left: '800px',
+                  cursor: row5Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row5Unlocked ? 1 : 0.5,
+                  zIndex: giftOfNatureHovered ? 100 : 1,
+                }}
+                onClick={() => row5Unlocked && setGiftOfNaturePoints(p => Math.min(p + 1, 5))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setGiftOfNaturePoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setGiftOfNatureHovered(true)}
+                onMouseLeave={() => setGiftOfNatureHovered(false)}
+              >
+                <img
+                  src="/icons/talents/gift-of-nature.jpg"
+                  alt="Gift of Nature"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row5Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row5Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{giftOfNaturePoints}/5</span>
+                {giftOfNatureHovered && (
+                  <img
+                    src={`/tooltips/talents/gift-of-nature_${giftOfNaturePoints}.png`}
+                    alt="Gift of Nature tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '0',
+                      pointerEvents: 'none',
+                      transform: 'scale(0.75)',
+                      transformOrigin: 'top left',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '250px',
+                  left: '940px',
+                  cursor: row5Unlocked ? 'pointer' : 'not-allowed',
+                  opacity: row5Unlocked ? 1 : 0.5,
+                  zIndex: improvedTranquilityHovered ? 100 : 1,
+                }}
+                onClick={() => row5Unlocked && setImprovedTranquilityPoints(p => Math.min(p + 1, 2))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setImprovedTranquilityPoints(p => Math.max(p - 1, 0));
+                }}
+                onMouseEnter={() => setImprovedTranquilityHovered(true)}
+                onMouseLeave={() => setImprovedTranquilityHovered(false)}
+              >
+                <img
+                  src="/icons/talents/improved-tranquility.jpg"
+                  alt="Improved Tranquility"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: `1px solid ${row5Unlocked ? 'green' : 'grey'}`,
+                    display: 'block',
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  bottom: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'black',
+                  color: row5Unlocked ? 'green' : 'grey',
+                  fontSize: '12px',
+                  padding: '0 2px',
+                }}>{improvedTranquilityPoints}/2</span>
+                {improvedTranquilityHovered && (
+                  <img
+                    src={`/tooltips/talents/improved-tranquility_${improvedTranquilityPoints}.png`}
+                    alt="Improved Tranquility tooltip"
                     style={{
                       position: 'absolute',
                       top: '50px',

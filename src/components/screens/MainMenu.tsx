@@ -24,9 +24,23 @@ export function MainMenu({ onNavigate }: MainMenuProps) {
         alt=""
         className={menuStyles.orbitingIcon3}
       />
+      <img
+        src="/icons/swiftmend.jpg"
+        alt=""
+        className={menuStyles.orbitingIcon4}
+      />
+      <img
+        src="/icons/natures_swiftness.jpg"
+        alt=""
+        className={menuStyles.orbitingIcon5}
+      />
+      <img
+        src="/icons/innervate.jpg"
+        alt=""
+        className={menuStyles.orbitingIcon6}
+      />
       <div className={menuStyles.menuContainer}>
-        <h1 className={styles.title}>Tree Simulator</h1>
-        <p className={styles.subtitle}>TBC Resto Druid Healing Practice</p>
+        <h1 className={styles.title} style={{ fontSize: '2rem', marginBottom: '1.5rem' }}>TBC Resto Druid Simulator</h1>
 
         <div className={styles.menuList}>
           <button

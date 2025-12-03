@@ -185,6 +185,15 @@ export const BRUTALLUS: Encounter = {
           tickInterval: 1,        // ticks every 1 second
           escalationInterval: 10, // damage doubles every 10 seconds
         },
+        // Stomp: Hits current tank for 5000 damage
+        // Applies debuff that increases damage taken by 30% for 10 seconds
+        stomp: {
+          damage: 5000,           // 5000 damage
+          interval: 30,           // every 30 seconds
+          initialDelay: 30,       // first stomp at 30 seconds
+          debuffDuration: 10,     // debuff lasts 10 seconds
+          debuffModifier: 0.30,   // 30% increased damage taken
+        },
       },
     },
   ],

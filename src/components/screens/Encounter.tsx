@@ -137,7 +137,6 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
   // Meteor Slash timer (for Brutallus-style cone damage)
   const meteorSlashTimerRef = useRef<number>(10.0);
-  const currentMeteorSlashTankRef = useRef<number>(0); // Which tank currently has aggro
 
   // All tank IDs for positioning (includes tanks not currently being attacked)
   const allTankIdsRef = useRef<string[]>([]);
@@ -183,6 +182,17 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   // Burn timer (for Brutallus burn DoT application)
   const burnTimerRef = useRef<number>(20.0);
   const BURN_DEBUFF_NAME = 'Burn';
+
+  // Stomp timer (for Brutallus stomp ability)
+  const stompTimerRef = useRef<number>(30.0);
+  const STOMP_DEBUFF_NAME = 'Stomp';
+
+  // Boss cooldowns state (for UI display)
+  const [bossCooldowns, setBossCooldowns] = useState({
+    meteorSlash: { remaining: 10, total: 10 },
+    burn: { remaining: 20, total: 20 },
+    stomp: { remaining: 30, total: 30 },
+  });
 
   // Refs to track current state values for game loop access
   const encounterActiveRef = useRef(encounterActive);
@@ -929,11 +939,11 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     }
     setBossTargetIds(targetIds);
 
-    // Initialize the Meteor Slash tank to the first tank
-    currentMeteorSlashTankRef.current = 0;
-
     // Initialize burn timer
     burnTimerRef.current = enc.phases[0]?.damagePattern?.burn?.interval ?? 20;
+
+    // Initialize stomp timer (uses initialDelay for first stomp)
+    stompTimerRef.current = enc.phases[0]?.damagePattern?.stomp?.initialDelay ?? 30;
 
     // Initialize bosses
     const initialBosses: BossState[] = [];
@@ -1284,7 +1294,17 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               }
 
               // Apply total damage from both weapons
-              const totalDamage = mainHandFinalDamage + offHandFinalDamage;
+              let totalDamage = mainHandFinalDamage + offHandFinalDamage;
+
+              // Check for Stomp debuff - increases damage taken
+              const stompDebuff = member.debuffs.find(d => d.name === STOMP_DEBUFF_NAME);
+              if (stompDebuff && stompDebuff.damageTakenModifier) {
+                const stompModifier = 1 + stompDebuff.damageTakenModifier;
+                const originalDamage = totalDamage;
+                totalDamage = Math.floor(totalDamage * stompModifier);
+                console.log(`Stomp debuff: ${originalDamage} -> ${totalDamage} (+${Math.round(stompDebuff.damageTakenModifier * 100)}%)`);
+              }
+
               const newHealth = Math.max(0, member.currentHealth - totalDamage);
               const willDie = newHealth <= 0;
               console.log(`${mainHandLog} | ${offHandLog} (${newHealth}/${member.maxHealth})`);
@@ -1396,9 +1416,20 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
           const randomDelay = Math.random() * 4;
           meteorSlashTimerRef.current = meteorSlashConfig.interval + randomDelay;
 
-          // Get the current tank with aggro (use allTankIdsRef since bossTargetIds only has the active tank)
-          const tankIndex = currentMeteorSlashTankRef.current;
-          const tankTargetId = allTankIdsRef.current[tankIndex];
+          // Get the current tank with aggro from bossTargetIds
+          const tankTargetId = bossTargetIdsRef.current[0];
+
+          // Skip if no valid target at all
+          if (!tankTargetId) {
+            return;
+          }
+
+          // Find this tank's index in allTankIds for positioning
+          // If aggro target isn't a positioned tank (e.g., 3rd tank or DPS), default to position 0
+          let tankIndex = allTankIdsRef.current.indexOf(tankTargetId);
+          if (tankIndex === -1) {
+            tankIndex = 0; // Use first tank position for cone direction
+          }
 
           // Create visual effect for the cone
           const newVisual: MeteorSlashVisual = {
@@ -1647,15 +1678,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
               // Check if this is the tank and they hit 3 stacks - trigger tank swap
               if (member.id === tankTargetId && newStacks >= 3) {
-                // Swap to the other tank
+                // Swap to the other tank (only if they're alive)
                 const newTankIndex = (tankIndex + 1) % allTankIdsRef.current.length;
                 const newTankId = allTankIdsRef.current[newTankIndex];
+                const newTankMember = prevMembers.find(m => m.id === newTankId);
 
-                if (newTankId && newTankId !== tankTargetId) {
+                if (newTankId && newTankId !== tankTargetId && newTankMember && !newTankMember.isDead) {
                   console.log(`TANK SWAP! ${member.name} has ${newStacks} stacks - swapping aggro to tank ${newTankIndex + 1}`);
-                  currentMeteorSlashTankRef.current = newTankIndex;
-
-                  // Update boss target to the new tank
+                  // Update boss target to the new tank (meteor slash will follow automatically)
                   setBossTargetIds([newTankId]);
                 }
               }
@@ -1816,6 +1846,78 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         });
       }
 
+      // Stomp processing (Brutallus - hits tank for damage + debuff)
+      const stompConfig = encounterRef.current?.phases[0]?.damagePattern?.stomp;
+      if (encounterActiveRef.current && stompConfig) {
+        stompTimerRef.current -= deltaSeconds;
+
+        if (stompTimerRef.current <= 0) {
+          // Reset timer for next stomp
+          stompTimerRef.current = stompConfig.interval;
+
+          // Get the current boss target (tank)
+          const tankTargetId = bossTargetIdsRef.current[0];
+
+          if (tankTargetId) {
+            setRaidMembers(prevMembers => {
+              const updatedMembers = prevMembers.map(member => {
+                if (member.id !== tankTargetId) return member;
+                if (member.isDead) return member;
+
+                // Apply stomp damage
+                const newHealth = Math.max(0, member.currentHealth - stompConfig.damage);
+
+                console.log(`STOMP! ${member.name} takes ${stompConfig.damage} damage (${newHealth}/${member.maxHealth})`);
+
+                // Check if already has stomp debuff - refresh duration
+                const existingDebuff = member.debuffs.find(d => d.name === STOMP_DEBUFF_NAME);
+                let newDebuffs: typeof member.debuffs;
+
+                if (existingDebuff) {
+                  // Refresh duration
+                  newDebuffs = member.debuffs.map(d => {
+                    if (d.name === STOMP_DEBUFF_NAME) {
+                      return {
+                        ...d,
+                        remainingDuration: stompConfig.debuffDuration,
+                      };
+                    }
+                    return d;
+                  });
+                } else {
+                  // Add new debuff
+                  newDebuffs = [
+                    ...member.debuffs,
+                    {
+                      id: `stomp-${member.id}-${Date.now()}`,
+                      name: STOMP_DEBUFF_NAME,
+                      remainingDuration: stompConfig.debuffDuration,
+                      damageTakenModifier: stompConfig.debuffModifier,
+                    },
+                  ];
+                }
+
+                return {
+                  ...member,
+                  currentHealth: newHealth,
+                  isDead: newHealth <= 0,
+                  debuffs: newDebuffs,
+                };
+              });
+
+              // Check for wipe after stomp damage
+              if (checkForWipe(updatedMembers)) {
+                console.log('DEFEAT! All raid members have died!');
+                setEncounterDefeat(true);
+                setEncounterActive(false);
+              }
+
+              return updatedMembers;
+            });
+          }
+        }
+      }
+
       // Raid DPS attacking the boss
       if (encounterActiveRef.current) {
         raidDpsTimerRef.current -= deltaSeconds;
@@ -1882,6 +1984,12 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         const raidSnapshot = raidMembersRef.current.map(m => ({ ...m }));
 
         for (const healer of npcHealersRef.current) {
+          // Skip dead healers - they can't cast spells!
+          const healerMember = raidSnapshot.find(m => m.id === healer.id);
+          if (healerMember?.isDead) {
+            continue;
+          }
+
           const result = updateNPCHealer(healer, raidSnapshot, deltaSeconds, bossTargetIdsRef.current);
 
           // Collect heal events and track effective healing for HPS meter
@@ -1905,6 +2013,9 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         if (allHealEvents.length > 0) {
           setRaidMembers(prevMembers => {
             const updatedMembers = prevMembers.map(member => {
+              // Don't heal dead players
+              if (member.isDead) return member;
+
               const healsForMember = allHealEvents.filter(e => e.targetId === member.id);
               if (healsForMember.length === 0) return member;
 
@@ -2014,6 +2125,11 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
         const updatedMembers = prevMembers.map(member => {
           if (member.hots.length === 0) return member;
+
+          // Don't process HoTs on dead players (clear their HoTs)
+          if (member.isDead) {
+            return { ...member, hots: [] };
+          }
 
           hasActiveHoTs = true;
           let newHealth = member.currentHealth;
@@ -2133,6 +2249,59 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       // Sync HPS meter state from refs (update UI every frame for smooth display)
       setEncounterElapsedTime(encounterElapsedTimeRef.current);
       setHealerEffectiveHealing({ ...healerEffectiveHealingRef.current });
+
+      // Ensure dead players don't have aggro (can happen if tank dies from non-auto-attack damage)
+      if (encounterActiveRef.current && bossTargetIdsRef.current.length > 0) {
+        const currentTargets = bossTargetIdsRef.current;
+        const raidSnapshot = raidMembersRef.current;
+
+        // Check if any current target is dead
+        const deadTargets = currentTargets.filter(targetId => {
+          const member = raidSnapshot.find(m => m.id === targetId);
+          return member?.isDead;
+        });
+
+        if (deadTargets.length > 0) {
+          const newTargetIds = [...currentTargets];
+
+          for (const deadId of deadTargets) {
+            const deadIndex = newTargetIds.indexOf(deadId);
+            if (deadIndex !== -1) {
+              // Find a new target using the priority system (tanks > dps > healers)
+              const newTarget = findNewAggroTarget(raidSnapshot, newTargetIds);
+
+              if (newTarget) {
+                const newTargetMember = raidSnapshot.find(m => m.id === newTarget);
+                console.log(`Dead player had aggro - Boss switches aggro to ${newTargetMember?.name}`);
+                newTargetIds[deadIndex] = newTarget;
+              } else {
+                // No valid targets left, remove this boss target slot
+                newTargetIds.splice(deadIndex, 1);
+              }
+            }
+          }
+
+          // Update boss targets if changed
+          if (JSON.stringify(newTargetIds) !== JSON.stringify(currentTargets)) {
+            setBossTargetIds(newTargetIds);
+            bossTargetIdsRef.current = newTargetIds;
+          }
+        }
+      }
+
+      // Sync boss cooldowns state for UI display
+      const enc = encounterRef.current;
+      if (enc && encounterActiveRef.current) {
+        const meteorSlashInterval = enc.phases[0]?.damagePattern?.meteorSlash?.interval ?? 10;
+        const burnInterval = enc.phases[0]?.damagePattern?.burn?.interval ?? 20;
+        const stompInterval = enc.phases[0]?.damagePattern?.stomp?.interval ?? 30;
+
+        setBossCooldowns({
+          meteorSlash: { remaining: meteorSlashTimerRef.current, total: meteorSlashInterval },
+          burn: { remaining: burnTimerRef.current, total: burnInterval },
+          stomp: { remaining: stompTimerRef.current, total: stompInterval },
+        });
+      }
     };
 
     const intervalId = setInterval(gameLoop, TICK_RATE);
@@ -2609,15 +2778,53 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       </div>
 
       {/* Boss Circles - one per boss, positioned on page */}
-      {bosses.map((_, index) => (
-        <div
-          key={index}
-          className={styles.bossCircle}
-          style={{
-            left: `calc(50% + ${(index - (bosses.length - 1) / 2) * 100}px)`,
-          }}
-        />
-      ))}
+      {bosses.map((_, index) => {
+        const hasMeteorSlash = !!encounter?.phases[0]?.damagePattern?.meteorSlash;
+        const hasBurn = !!encounter?.phases[0]?.damagePattern?.burn;
+        const hasStomp = !!encounter?.phases[0]?.damagePattern?.stomp;
+        const hasAnyCooldowns = hasMeteorSlash || hasBurn || hasStomp;
+
+        return (
+          <div
+            key={index}
+            className={styles.bossCircleContainer}
+            style={{
+              left: `calc(50% + ${(index - (bosses.length - 1) / 2) * 100}px)`,
+            }}
+          >
+            {/* Boss Cooldown Icons */}
+            {hasAnyCooldowns && encounterActive && (
+              <div className={styles.bossCooldownIcons}>
+                {hasMeteorSlash && (
+                  <BossCooldownIcon
+                    icon="/icons/meteor-slash.jpg"
+                    name="Meteor Slash"
+                    remaining={bossCooldowns.meteorSlash.remaining}
+                    total={bossCooldowns.meteorSlash.total}
+                  />
+                )}
+                {hasBurn && (
+                  <BossCooldownIcon
+                    icon="/icons/burn.jpg"
+                    name="Burn"
+                    remaining={bossCooldowns.burn.remaining}
+                    total={bossCooldowns.burn.total}
+                  />
+                )}
+                {hasStomp && (
+                  <BossCooldownIcon
+                    icon="/icons/stomp.jpg"
+                    name="Stomp"
+                    remaining={bossCooldowns.stomp.remaining}
+                    total={bossCooldowns.stomp.total}
+                  />
+                )}
+              </div>
+            )}
+            <div className={styles.bossCircle} />
+          </div>
+        );
+      })}
 
       {/* Chain Heal Visual Lines */}
       {chainHealVisuals.length > 0 && (
@@ -3280,7 +3487,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
         return (
           <div
             key={member.id}
-            className={`${styles.playerCircle} ${targetId === member.id ? styles.targetedCircle : ''} ${isPlayer ? styles.playerSelfCircle : ''}`}
+            className={`${styles.playerCircle} ${targetId === member.id ? styles.targetedCircle : ''} ${isPlayer ? styles.playerSelfCircle : ''} ${member.isDead ? styles.deadCircle : ''}`}
             style={{
               left: `calc(50% + ${x}px)`,
               top: `calc(280px + ${y}px)`,
@@ -3513,6 +3720,9 @@ function RaidSquare({ member, isTargeted, hasAggro, onClick }: RaidSquareProps) 
   // Find Burn debuff if present
   const burnDebuff = member.debuffs.find(d => d.name === 'Burn');
 
+  // Find Stomp debuff if present
+  const stompDebuff = member.debuffs.find(d => d.name === 'Stomp');
+
   return (
     <div
       className={classNames}
@@ -3538,6 +3748,13 @@ function RaidSquare({ member, isTargeted, hasAggro, onClick }: RaidSquareProps) 
           maxDuration={60}
         />
       )}
+      {/* Stomp Overlay */}
+      {stompDebuff && (
+        <StompOverlay
+          remainingDuration={stompDebuff.remainingDuration}
+          maxDuration={10}
+        />
+      )}
       {/* Rejuvenation indicator */}
       {rejuvHot && (
         <div className={styles.rejuvIndicator} />
@@ -3549,6 +3766,10 @@ function RaidSquare({ member, isTargeted, hasAggro, onClick }: RaidSquareProps) 
       {/* Aggro indicator */}
       {hasAggro && (
         <div className={styles.aggroIndicator} />
+      )}
+      {/* Dead indicator */}
+      {member.isDead && (
+        <div className={styles.deadIndicator}>DEAD</div>
       )}
     </div>
   );
@@ -3615,6 +3836,69 @@ function BurnOverlay({ remainingDuration, maxDuration }: BurnOverlayProps) {
         className={styles.burnSweep}
         style={{
           background: `conic-gradient(from 0deg, rgba(0,0,0,0.7) ${degrees}deg, transparent ${degrees}deg)`,
+        }}
+      />
+    </div>
+  );
+}
+
+interface StompOverlayProps {
+  remainingDuration: number;
+  maxDuration: number;
+}
+
+function StompOverlay({ remainingDuration, maxDuration }: StompOverlayProps) {
+  // Calculate the sweep progress (0 = full, 1 = empty)
+  const progress = 1 - (remainingDuration / maxDuration);
+  // Convert to degrees for conic-gradient (clockwise from top)
+  const degrees = progress * 360;
+
+  return (
+    <div className={styles.stompOverlay}>
+      <img
+        src="/icons/stomp.jpg"
+        alt="Stomp"
+        className={styles.stompIcon}
+        draggable={false}
+      />
+      {/* Clockwise sweep fade overlay */}
+      <div
+        className={styles.stompSweep}
+        style={{
+          background: `conic-gradient(from 0deg, rgba(0,0,0,0.7) ${degrees}deg, transparent ${degrees}deg)`,
+        }}
+      />
+    </div>
+  );
+}
+
+interface BossCooldownIconProps {
+  icon: string;
+  name: string;
+  remaining: number;
+  total: number;
+}
+
+function BossCooldownIcon({ icon, name, remaining, total }: BossCooldownIconProps) {
+  // Calculate the sweep progress (0 = ready, 1 = just used)
+  // remaining goes from total -> 0, so progress = remaining / total
+  const progress = Math.max(0, Math.min(1, remaining / total));
+  // Convert to degrees for conic-gradient (clockwise from top)
+  const degrees = progress * 360;
+
+  return (
+    <div className={styles.bossCooldownIcon} title={`${name}: ${remaining.toFixed(1)}s`}>
+      <img
+        src={icon}
+        alt={name}
+        className={styles.bossCooldownIconImg}
+        draggable={false}
+      />
+      {/* Clockwise sweep fade overlay - shows remaining cooldown */}
+      <div
+        className={styles.bossCooldownSweep}
+        style={{
+          background: `conic-gradient(from 0deg, transparent ${360 - degrees}deg, rgba(0,0,0,0.7) ${360 - degrees}deg)`,
         }}
       />
     </div>

@@ -538,6 +538,37 @@
   pointer-events: none;
 }
 
+/* Stomp Overlay Styles (debuff with clockwise fade) */
+.stompOverlay {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  z-index: 11;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid #8b4513;
+  box-shadow: 0 0 6px rgba(139, 69, 19, 0.8);
+}
+
+.stompIcon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.stompSweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 /* Rejuvenation indicator - small purple square */
 .rejuvIndicator {
   position: absolute;
@@ -591,19 +622,76 @@
   }
 }
 
-/* Boss Circle - positioned on page */
-.bossCircle {
+/* Dead indicator - centered text overlay */
+.deadIndicator {
   position: absolute;
+  top: 50%;
   left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #e74c3c;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  z-index: 20;
+  letter-spacing: 1px;
+}
+
+/* Boss Circle Container - holds both circle and cooldown icons */
+.bossCircleContainer {
+  position: absolute;
   top: 280px;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 20;
+}
+
+/* Boss Cooldown Icons - row of icons above boss */
+.bossCooldownIcons {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  z-index: 20;
+}
+
+.bossCooldownIcon {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 2px solid #666;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+}
+
+.bossCooldownIconImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bossCooldownSweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Boss Circle - positioned on page */
+.bossCircle {
   width: 70px;
   height: 70px;
   background-color: #c0392b;
   border: 3px solid #e74c3c;
   border-radius: 50%;
   box-shadow: 0 0 25px rgba(231, 76, 60, 0.6);
-  z-index: 5;
 }
 
 /* Player Circles - positioned on page */
@@ -633,6 +721,10 @@
 
 .targetedCircle:hover {
   transform: translate(-50%, -50%) scale(1.3);
+}
+
+.deadCircle {
+  opacity: 0.35;
 }
 
 .playerSelfCircle {
