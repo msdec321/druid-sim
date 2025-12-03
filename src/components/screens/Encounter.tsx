@@ -172,7 +172,11 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   interface MeteorSlashVisual {
     id: number;
     timestamp: number;
-    tankIndex: number;
+    // Position of the aggro target (origin of the cone)
+    targetX: number;
+    targetY: number;
+    // Direction the cone points (angle in radians, away from boss)
+    coneDirection: number;
   }
   const [meteorSlashVisuals, setMeteorSlashVisuals] = useState<MeteorSlashVisual[]>([]);
   const meteorSlashVisualsRef = useRef<MeteorSlashVisual[]>([]);
@@ -186,6 +190,36 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
   // Stomp timer (for Brutallus stomp ability)
   const stompTimerRef = useRef<number>(30.0);
   const STOMP_DEBUFF_NAME = 'Stomp';
+
+  // Track Meteor Slash hits per group (for tank swap logic)
+  // Index corresponds to tank index (0 = east tank group, 1 = south tank group)
+  const meteorSlashGroupHitsRef = useRef<number[]>([0, 0]);
+
+  // Immunity ability chat bubble state (for Paladins/Mages removing Burn)
+  interface ImmunityBubble {
+    id: string;
+    memberId: string;
+    spellName: string;
+    timestamp: number;
+  }
+  const [immunityBubbles, setImmunityBubbles] = useState<ImmunityBubble[]>([]);
+  const immunityBubblesRef = useRef<ImmunityBubble[]>([]);
+  const IMMUNITY_BUBBLE_DISPLAY_TIME = 3000; // 3 seconds at full opacity
+  const IMMUNITY_BUBBLE_FADE_TIME = 3000; // 3 seconds to fade out
+  const IMMUNITY_BUBBLE_DURATION = IMMUNITY_BUBBLE_DISPLAY_TIME + IMMUNITY_BUBBLE_FADE_TIME; // total 6 seconds
+
+  // Track when Paladins received Burn (for 3s delay before Divine Shield)
+  // Map of memberId -> time remaining until they use Divine Shield
+  const paladinBurnTimersRef = useRef<Map<string, number>>(new Map());
+  const DIVINE_SHIELD_DELAY = 3.0; // 3 seconds before Paladin uses Divine Shield
+
+  // Track when Mages received Burn (for 3s delay before Ice Block)
+  // Map of memberId -> time remaining until they use Ice Block
+  const mageIceBlockTimersRef = useRef<Map<string, number>>(new Map());
+  // Track how many times each Mage has used Ice Block (max 2 per encounter)
+  const mageIceBlockUsesRef = useRef<Map<string, number>>(new Map());
+  const ICE_BLOCK_DELAY = 3.0; // 3 seconds before Mage uses Ice Block
+  const ICE_BLOCK_MAX_USES = 2; // Mages can use Ice Block twice per encounter
 
   // Boss cooldowns state (for UI display)
   const [bossCooldowns, setBossCooldowns] = useState({
@@ -945,6 +979,16 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
     // Initialize stomp timer (uses initialDelay for first stomp)
     stompTimerRef.current = enc.phases[0]?.damagePattern?.stomp?.initialDelay ?? 30;
 
+    // Reset Meteor Slash group hit counters (for tank swap logic)
+    meteorSlashGroupHitsRef.current = [0, 0];
+
+    // Reset immunity ability tracking (Paladin Divine Shield, Mage Ice Block)
+    paladinBurnTimersRef.current.clear();
+    mageIceBlockTimersRef.current.clear();
+    mageIceBlockUsesRef.current.clear();
+    immunityBubblesRef.current = [];
+    setImmunityBubbles([]);
+
     // Initialize bosses
     const initialBosses: BossState[] = [];
     for (let i = 0; i < bossCount; i++) {
@@ -1416,56 +1460,102 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
           const randomDelay = Math.random() * 4;
           meteorSlashTimerRef.current = meteorSlashConfig.interval + randomDelay;
 
-          // Get the current tank with aggro from bossTargetIds
-          const tankTargetId = bossTargetIdsRef.current[0];
+          // Get the current aggro target from bossTargetIds
+          const aggroTargetId = bossTargetIdsRef.current[0];
 
           // Skip if no valid target at all
-          if (!tankTargetId) {
+          if (!aggroTargetId) {
             return;
           }
 
-          // Find this tank's index in allTankIds for positioning
-          // If aggro target isn't a positioned tank (e.g., 3rd tank or DPS), default to position 0
-          let tankIndex = allTankIdsRef.current.indexOf(tankTargetId);
-          if (tankIndex === -1) {
-            tankIndex = 0; // Use first tank position for cone direction
+          // Find this target's index in allTankIds (for tank swap logic tracking)
+          // Returns -1 if aggro target is not a tank (e.g., tank died and DPS has aggro)
+          let tankIndex = allTankIdsRef.current.indexOf(aggroTargetId);
+
+          // Get current encounter and cone config
+          const currentEncounter = encounterRef.current;
+          // Use first ranged group config for cone spread/distance defaults
+          const rangedGroup = currentEncounter?.rangedGroups?.[0];
+          const coneSpread = rangedGroup?.coneSpread ?? Math.PI / 2;
+          const coneMaxDist = rangedGroup?.coneMaxDistance ?? 260;
+          const halfSpread = coneSpread / 2;
+
+          // Calculate the aggro target's actual position (relative to boss at origin)
+          const currentMembers = raidMembersRef.current;
+          const aggroTarget = currentMembers.find(m => m.id === aggroTargetId);
+
+          let aggroTargetX = 0;
+          let aggroTargetY = 0;
+
+          if (aggroTarget) {
+            const targetWithSpec = aggroTarget as RaidMember & { specId?: string };
+            const isPlayer = targetWithSpec.specId === PLAYER_SPEC_ID;
+
+            if (isPlayer) {
+              // Player uses their actual position
+              aggroTargetX = playerPositionRef.current.x;
+              aggroTargetY = playerPositionRef.current.y;
+            } else {
+              // Check if this is a positioned tank
+              const targetTankIndex = allTankIdsRef.current.indexOf(aggroTarget.id);
+              if (targetTankIndex !== -1 && currentEncounter?.tankPositions?.[targetTankIndex]) {
+                const tankPos = currentEncounter.tankPositions[targetTankIndex];
+                aggroTargetX = Math.cos(tankPos.angle) * tankPos.radius;
+                aggroTargetY = Math.sin(tankPos.angle) * tankPos.radius;
+              } else {
+                // Non-tank NPC: calculate their position based on spec
+                const spec = targetWithSpec.specId ? getSpec(targetWithSpec.specId) : null;
+                const isMelee = spec ? isMeleeSpec(spec.id) : false;
+
+                if (isMelee && currentEncounter?.meleePosition) {
+                  // Melee positioning
+                  const meleeMembers = currentMembers.filter(m => {
+                    const s = (m as RaidMember & { specId?: string }).specId;
+                    return s && isMeleeSpec(s) && !allTankIdsRef.current.includes(m.id);
+                  });
+                  const meleeIndex = meleeMembers.findIndex(m => m.id === aggroTarget.id);
+                  const meleeCount = meleeMembers.length;
+                  const customMelee = currentEncounter.meleePosition;
+                  const angleRange = customMelee.endAngle - customMelee.startAngle;
+                  const angle = customMelee.startAngle + angleRange * (meleeIndex / Math.max(1, meleeCount - 1));
+                  const radiusRange = customMelee.maxRadius - customMelee.minRadius;
+                  const radius = customMelee.minRadius + radiusRange * ((meleeIndex % 3) / 2);
+                  aggroTargetX = Math.cos(angle) * radius;
+                  aggroTargetY = Math.sin(angle) * radius;
+                } else {
+                  // Ranged: use first ranged group position as fallback
+                  aggroTargetX = 0;
+                  aggroTargetY = 150;
+                }
+              }
+            }
           }
 
-          // Create visual effect for the cone
+          // Cone direction points from boss (origin) through the aggro target
+          const coneDirection = Math.atan2(aggroTargetY, aggroTargetX);
+
+          // Create visual effect for the cone using aggro target's position
           const newVisual: MeteorSlashVisual = {
             id: meteorSlashVisualIdRef.current++,
             timestamp: Date.now(),
-            tankIndex,
+            targetX: aggroTargetX,
+            targetY: aggroTargetY,
+            coneDirection,
           };
           meteorSlashVisualsRef.current = [...meteorSlashVisualsRef.current, newVisual];
           setMeteorSlashVisuals(meteorSlashVisualsRef.current);
 
-          // Find all players standing within the cone behind this tank
-          const currentEncounter = encounterRef.current;
-          const tankPos = currentEncounter?.tankPositions?.[tankIndex];
-          const rangedGroup = currentEncounter?.rangedGroups?.[tankIndex];
-
-          // Get cone geometry
-          const coneSpread = rangedGroup?.coneSpread ?? Math.PI / 2;
-          const coneMaxDist = rangedGroup?.coneMaxDistance ?? 260;
-          const coneDirection = tankPos?.angle ?? 0;
-          const halfSpread = coneSpread / 2;
-
-          // Tank position (relative to boss at origin)
-          const tankX = tankPos ? Math.cos(tankPos.angle) * tankPos.radius : 0;
-          const tankY = tankPos ? Math.sin(tankPos.angle) * tankPos.radius : 0;
-
           // Helper to check if a position is inside the cone
           const isInsideCone = (px: number, py: number): boolean => {
-            // Vector from tank to player
-            const dx = px - tankX;
-            const dy = py - tankY;
+            // Vector from aggro target to player
+            const dx = px - aggroTargetX;
+            const dy = py - aggroTargetY;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Check distance (must be within cone range, but also close enough to tank counts)
+            // Check distance (must be within cone range)
             if (distance > coneMaxDist) return false;
 
-            // Check angle - get angle from tank to player
+            // Check angle - get angle from aggro target to player
             const angleToPlayer = Math.atan2(dy, dx);
 
             // Calculate angular difference from cone direction
@@ -1606,15 +1696,15 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             // Find all players inside the cone
             const affectedIds = new Set<string>();
 
-            // Always add the tank (they're at the tip of the cone)
-            if (tankTargetId) {
-              affectedIds.add(tankTargetId);
+            // Always add the aggro target (they're at the tip of the cone)
+            if (aggroTargetId) {
+              affectedIds.add(aggroTargetId);
             }
 
             // Check each alive member to see if they're in the cone
             prevMembers.forEach(member => {
               if (member.isDead) return;
-              if (member.id === tankTargetId) return; // Already added
+              if (member.id === aggroTargetId) return; // Already added
 
               const pos = getMemberPosition(member, prevMembers);
               if (isInsideCone(pos.x, pos.y)) {
@@ -1676,20 +1766,6 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               const newStacks = (existingDebuff?.stacks ?? 0) + 1;
               console.log(`  ${member.name}: ${finalDamage} damage (${currentStacks} stacks, ${Math.round(damageModifier * 100)}% modifier), now ${newStacks} stacks`);
 
-              // Check if this is the tank and they hit 3 stacks - trigger tank swap
-              if (member.id === tankTargetId && newStacks >= 3) {
-                // Swap to the other tank (only if they're alive)
-                const newTankIndex = (tankIndex + 1) % allTankIdsRef.current.length;
-                const newTankId = allTankIdsRef.current[newTankIndex];
-                const newTankMember = prevMembers.find(m => m.id === newTankId);
-
-                if (newTankId && newTankId !== tankTargetId && newTankMember && !newTankMember.isDead) {
-                  console.log(`TANK SWAP! ${member.name} has ${newStacks} stacks - swapping aggro to tank ${newTankIndex + 1}`);
-                  // Update boss target to the new tank (meteor slash will follow automatically)
-                  setBossTargetIds([newTankId]);
-                }
-              }
-
               return {
                 ...member,
                 currentHealth: newHealth,
@@ -1707,6 +1783,36 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
 
             return updatedMembers;
           });
+
+          // Track group hits and handle tank swap (outside of setRaidMembers for proper ref updates)
+          meteorSlashGroupHitsRef.current[tankIndex] = (meteorSlashGroupHitsRef.current[tankIndex] ?? 0) + 1;
+          const groupHits = meteorSlashGroupHitsRef.current[tankIndex];
+          console.log(`Group ${tankIndex + 1} (${tankIndex === 0 ? 'East' : 'South'}) has been hit ${groupHits} time(s)`);
+
+          // Check if this group has reached 3 hits - trigger tank swap
+          if (groupHits >= 3) {
+            const newTankIndex = (tankIndex + 1) % allTankIdsRef.current.length;
+            const newTankId = allTankIdsRef.current[newTankIndex];
+
+            // Check if the new tank is alive using the ref (most current state)
+            const currentMembers = raidMembersRef.current;
+            const newTankMember = currentMembers.find(m => m.id === newTankId);
+            const currentTankId = bossTargetIdsRef.current[0];
+
+            if (newTankId && newTankId !== currentTankId && newTankMember && !newTankMember.isDead) {
+              console.log(`TANK SWAP! Group ${tankIndex + 1} reached ${groupHits} stacks - swapping aggro to tank ${newTankIndex + 1} (${newTankIndex === 0 ? 'East' : 'South'})`);
+
+              // Update both state AND ref immediately to ensure next Meteor Slash targets correct group
+              setBossTargetIds([newTankId]);
+              bossTargetIdsRef.current = [newTankId];
+
+              // Reset BOTH group hit counters on swap
+              // - New group starts at 0 (they'll accumulate 3 hits before next swap)
+              // - Old group resets to 0 so they start fresh when aggro returns to them
+              meteorSlashGroupHitsRef.current[0] = 0;
+              meteorSlashGroupHitsRef.current[1] = 0;
+            }
+          }
         }
       }
 
@@ -1736,6 +1842,24 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             const target = eligibleMembers[targetIndex];
 
             console.log(`Burn applied to ${target.name}!`);
+
+            // Check if target is a Paladin - they will Divine Shield after 3 seconds
+            const targetSpecId = (target as RaidMember & { specId?: string }).specId;
+            if (targetSpecId?.startsWith('paladin-')) {
+              console.log(`${target.name} is a Paladin - will Divine Shield in 3 seconds`);
+              paladinBurnTimersRef.current.set(target.id, DIVINE_SHIELD_DELAY);
+            }
+
+            // Check if target is a Mage - they will Ice Block after 3 seconds (if they have charges left)
+            if (targetSpecId?.startsWith('mage-')) {
+              const usesRemaining = ICE_BLOCK_MAX_USES - (mageIceBlockUsesRef.current.get(target.id) ?? 0);
+              if (usesRemaining > 0) {
+                console.log(`${target.name} is a Mage - will Ice Block in 3 seconds (${usesRemaining} use(s) remaining)`);
+                mageIceBlockTimersRef.current.set(target.id, ICE_BLOCK_DELAY);
+              } else {
+                console.log(`${target.name} is a Mage but has no Ice Block charges remaining!`);
+              }
+            }
 
             // Apply burn debuff to the selected target
             return prevMembers.map(member => {
@@ -1867,15 +1991,24 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 // Apply stomp damage
                 const newHealth = Math.max(0, member.currentHealth - stompConfig.damage);
 
-                console.log(`STOMP! ${member.name} takes ${stompConfig.damage} damage (${newHealth}/${member.maxHealth})`);
+                // Check if target has Burn - Stomp removes it
+                const hadBurn = member.debuffs.some(d => d.name === BURN_DEBUFF_NAME);
+                if (hadBurn) {
+                  console.log(`STOMP! ${member.name} takes ${stompConfig.damage} damage - Burn removed!`);
+                } else {
+                  console.log(`STOMP! ${member.name} takes ${stompConfig.damage} damage (${newHealth}/${member.maxHealth})`);
+                }
 
                 // Check if already has stomp debuff - refresh duration
                 const existingDebuff = member.debuffs.find(d => d.name === STOMP_DEBUFF_NAME);
                 let newDebuffs: typeof member.debuffs;
 
+                // First, filter out Burn debuff (Stomp removes it)
+                const debuffsWithoutBurn = member.debuffs.filter(d => d.name !== BURN_DEBUFF_NAME);
+
                 if (existingDebuff) {
                   // Refresh duration
-                  newDebuffs = member.debuffs.map(d => {
+                  newDebuffs = debuffsWithoutBurn.map(d => {
                     if (d.name === STOMP_DEBUFF_NAME) {
                       return {
                         ...d,
@@ -1887,7 +2020,7 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 } else {
                   // Add new debuff
                   newDebuffs = [
-                    ...member.debuffs,
+                    ...debuffsWithoutBurn,
                     {
                       id: `stomp-${member.id}-${Date.now()}`,
                       name: STOMP_DEBUFF_NAME,
@@ -1915,6 +2048,135 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
               return updatedMembers;
             });
           }
+        }
+      }
+
+      // Paladin Divine Shield processing (remove Burn after 3 second delay)
+      if (encounterActiveRef.current && paladinBurnTimersRef.current.size > 0) {
+        const expiredPaladins: string[] = [];
+
+        // Count down all Paladin burn timers
+        paladinBurnTimersRef.current.forEach((timeRemaining, memberId) => {
+          const newTime = timeRemaining - deltaSeconds;
+          if (newTime <= 0) {
+            expiredPaladins.push(memberId);
+          } else {
+            paladinBurnTimersRef.current.set(memberId, newTime);
+          }
+        });
+
+        // Process Paladins whose timers have expired
+        if (expiredPaladins.length > 0) {
+          setRaidMembers(prevMembers => {
+            return prevMembers.map(member => {
+              if (!expiredPaladins.includes(member.id)) return member;
+              if (member.isDead) return member;
+
+              // Check if they still have Burn (might have been removed by Stomp)
+              const hasBurn = member.debuffs.some(d => d.name === BURN_DEBUFF_NAME);
+              if (!hasBurn) {
+                // Already removed, just clean up the timer
+                paladinBurnTimersRef.current.delete(member.id);
+                return member;
+              }
+
+              console.log(`${member.name} uses [Divine Shield] to remove Burn!`);
+
+              // Remove Burn debuff
+              const newDebuffs = member.debuffs.filter(d => d.name !== BURN_DEBUFF_NAME);
+
+              // Add chat bubble
+              const newBubble: ImmunityBubble = {
+                id: `divine-shield-${member.id}-${Date.now()}`,
+                memberId: member.id,
+                spellName: 'Divine Shield',
+                timestamp: Date.now(),
+              };
+              immunityBubblesRef.current = [...immunityBubblesRef.current, newBubble];
+              setImmunityBubbles(immunityBubblesRef.current);
+
+              // Remove from timer tracking
+              paladinBurnTimersRef.current.delete(member.id);
+
+              return {
+                ...member,
+                debuffs: newDebuffs,
+              };
+            });
+          });
+        }
+      }
+
+      // Mage Ice Block processing (remove Burn after 3 second delay, max 2 uses)
+      if (encounterActiveRef.current && mageIceBlockTimersRef.current.size > 0) {
+        const expiredMages: string[] = [];
+
+        // Count down all Mage Ice Block timers
+        mageIceBlockTimersRef.current.forEach((timeRemaining, memberId) => {
+          const newTime = timeRemaining - deltaSeconds;
+          if (newTime <= 0) {
+            expiredMages.push(memberId);
+          } else {
+            mageIceBlockTimersRef.current.set(memberId, newTime);
+          }
+        });
+
+        // Process Mages whose timers have expired
+        if (expiredMages.length > 0) {
+          setRaidMembers(prevMembers => {
+            return prevMembers.map(member => {
+              if (!expiredMages.includes(member.id)) return member;
+              if (member.isDead) return member;
+
+              // Check if they still have Burn (might have been removed by Stomp)
+              const hasBurn = member.debuffs.some(d => d.name === BURN_DEBUFF_NAME);
+              if (!hasBurn) {
+                // Already removed, just clean up the timer
+                mageIceBlockTimersRef.current.delete(member.id);
+                return member;
+              }
+
+              // Increment Ice Block usage count
+              const currentUses = mageIceBlockUsesRef.current.get(member.id) ?? 0;
+              mageIceBlockUsesRef.current.set(member.id, currentUses + 1);
+              const usesRemaining = ICE_BLOCK_MAX_USES - (currentUses + 1);
+
+              console.log(`${member.name} uses [Ice Block] to remove Burn! (${usesRemaining} use(s) remaining)`);
+
+              // Remove Burn debuff
+              const newDebuffs = member.debuffs.filter(d => d.name !== BURN_DEBUFF_NAME);
+
+              // Add chat bubble
+              const newBubble: ImmunityBubble = {
+                id: `ice-block-${member.id}-${Date.now()}`,
+                memberId: member.id,
+                spellName: 'Ice Block',
+                timestamp: Date.now(),
+              };
+              immunityBubblesRef.current = [...immunityBubblesRef.current, newBubble];
+              setImmunityBubbles(immunityBubblesRef.current);
+
+              // Remove from timer tracking
+              mageIceBlockTimersRef.current.delete(member.id);
+
+              return {
+                ...member,
+                debuffs: newDebuffs,
+              };
+            });
+          });
+        }
+      }
+
+      // Clean up expired immunity bubbles (Divine Shield, Ice Block)
+      if (immunityBubblesRef.current.length > 0) {
+        const now = Date.now();
+        const filtered = immunityBubblesRef.current.filter(
+          b => now - b.timestamp < IMMUNITY_BUBBLE_DURATION
+        );
+        if (filtered.length !== immunityBubblesRef.current.length) {
+          immunityBubblesRef.current = filtered;
+          setImmunityBubbles(filtered);
         }
       }
 
@@ -3052,18 +3314,14 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
       )}
 
       {/* Meteor Slash Cone Visual */}
-      {meteorSlashVisuals.length > 0 && encounter?.tankPositions && (
+      {meteorSlashVisuals.length > 0 && (
         <svg className={styles.meteorSlashSvg} style={{ overflow: 'visible' }}>
           {meteorSlashVisuals.map((visual) => {
             const age = Date.now() - visual.timestamp;
             const opacity = Math.max(0, 1 - age / METEOR_SLASH_VISUAL_DURATION);
 
-            // Get the tank position for this visual
-            const tankPos = encounter.tankPositions?.[visual.tankIndex];
-            if (!tankPos) return null;
-
-            // Get cone spread from ranged groups config
-            const rangedGroup = encounter.rangedGroups?.[visual.tankIndex];
+            // Get cone spread from ranged groups config (use first group as default)
+            const rangedGroup = encounter?.rangedGroups?.[0];
             const coneSpread = rangedGroup?.coneSpread ?? Math.PI / 2;
             const coneMaxDist = rangedGroup?.coneMaxDistance ?? 260;
 
@@ -3072,31 +3330,31 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
             const centerX = window.innerWidth / 2;
             const baseY = 280;
 
-            // Tank position
-            const tankX = centerX + Math.cos(tankPos.angle) * tankPos.radius;
-            const tankY = baseY + Math.sin(tankPos.angle) * tankPos.radius;
+            // Aggro target position (converted to screen coordinates)
+            const targetX = centerX + visual.targetX;
+            const targetY = baseY + visual.targetY;
 
-            // Cone direction (away from boss, same as tank angle)
-            const coneDirection = tankPos.angle;
+            // Cone direction (stored in visual, points away from boss through target)
+            const coneDirection = visual.coneDirection;
             const halfSpread = coneSpread / 2;
 
             // Calculate cone arc points
             const leftAngle = coneDirection - halfSpread;
             const rightAngle = coneDirection + halfSpread;
 
-            // Far edge of cone (at coneMaxDist from tank)
-            const farLeftX = tankX + Math.cos(leftAngle) * coneMaxDist;
-            const farLeftY = tankY + Math.sin(leftAngle) * coneMaxDist;
-            const farRightX = tankX + Math.cos(rightAngle) * coneMaxDist;
-            const farRightY = tankY + Math.sin(rightAngle) * coneMaxDist;
+            // Far edge of cone (at coneMaxDist from aggro target)
+            const farLeftX = targetX + Math.cos(leftAngle) * coneMaxDist;
+            const farLeftY = targetY + Math.sin(leftAngle) * coneMaxDist;
+            const farRightX = targetX + Math.cos(rightAngle) * coneMaxDist;
+            const farRightY = targetY + Math.sin(rightAngle) * coneMaxDist;
 
             // Create arc path for the far edge
             const arcRadius = coneMaxDist;
             const largeArcFlag = coneSpread > Math.PI ? 1 : 0;
 
-            // Path: start at tank, line to far left, arc to far right, line back to tank
+            // Path: start at aggro target, line to far left, arc to far right, line back
             const pathD = `
-              M ${tankX} ${tankY}
+              M ${targetX} ${targetY}
               L ${farLeftX} ${farLeftY}
               A ${arcRadius} ${arcRadius} 0 ${largeArcFlag} 1 ${farRightX} ${farRightY}
               Z
@@ -3547,6 +3805,24 @@ export function Encounter({ encounterId, gearsetId, actionBars, keybindings, rai
                 <div className={styles.debuffIcon}>
                   <img src="/icons/meteor-slash.jpg" alt="Meteor Slash" />
                   <span className={styles.debuffStacks}>{meteorSlashDebuff.stacks ?? 1}</span>
+                </div>
+              );
+            })()}
+            {/* Immunity Ability Chat Bubble (Divine Shield, Ice Block) */}
+            {(() => {
+              const bubble = immunityBubbles.find(b => b.memberId === member.id);
+              if (!bubble) return null;
+              const age = Date.now() - bubble.timestamp;
+              // Full opacity for display time, then fade over fade time
+              const opacity = age < IMMUNITY_BUBBLE_DISPLAY_TIME
+                ? 1
+                : Math.max(0, 1 - (age - IMMUNITY_BUBBLE_DISPLAY_TIME) / IMMUNITY_BUBBLE_FADE_TIME);
+              return (
+                <div
+                  className={styles.divineShieldBubble}
+                  style={{ opacity }}
+                >
+                  Removed Burn with [{bubble.spellName}]
                 </div>
               );
             })()}

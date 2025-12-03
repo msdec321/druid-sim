@@ -124,7 +124,7 @@ export const KALECGOS: Encounter = {
 
 export const BRUTALLUS: Encounter = {
   id: 'brutallus',
-  name: 'Brutallus (Under Construction)',
+  name: 'Brutallus',
   description: 'A brutal pit lord with heavy tank damage and raid-wide burns.',
   difficulty: 'hard',
   duration: 300, // 5 minutes
@@ -201,11 +201,10 @@ export const BRUTALLUS: Encounter = {
 
 export const FELMYST: Encounter = {
   id: 'felmyst',
-  name: 'Felmyst',
+  name: 'Felmyst (Under Construction)',
   description: 'The reanimated corpse of Madrigosa. Features ground and air phases.',
   difficulty: 'hard',
   duration: 360, // 6 minutes
-  disabled: true,
   phases: [
     {
       name: 'Phase 1',
